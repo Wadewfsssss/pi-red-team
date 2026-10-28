@@ -1,0 +1,31 @@
+import { type workerStateAdapter } from "./worker-state.js";
+import { type WorkerConfig, type WorkerReply, type WorkerView } from "./protocol.js";
+export declare class SdkWorker {
+    private readonly domain?;
+    private readonly assertQuiescent?;
+    private child;
+    private pending;
+    private heartbeat;
+    private stopping;
+    private stopPromise;
+    private started;
+    private closed;
+    private logs;
+    private listeners;
+    private toolBusy;
+    private toolOperation;
+    private renewal;
+    readonly config: WorkerConfig;
+    current: WorkerView | undefined;
+    constructor(config: WorkerConfig, domain?: Parameters<typeof workerStateAdapter>[1], assertQuiescent?: Parameters<typeof workerStateAdapter>[2]);
+    onActivity(listener: (reply: WorkerReply) => void): () => void;
+    start(): Promise<WorkerView>;
+    private failPending;
+    private request;
+    prompt(text: string, timeoutMs?: number): Promise<WorkerReply>;
+    inspect(): Promise<WorkerReply>;
+    abort(): Promise<WorkerReply>;
+    compact(instructions?: string): Promise<WorkerReply>;
+    stop(): Promise<void>;
+    private shutdown;
+}

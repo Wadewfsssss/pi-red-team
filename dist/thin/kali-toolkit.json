@@ -1,0 +1,63 @@
+{
+    "version": 1,
+    "profile": "headless-redteam",
+    "analysisPythonModules": ["angr", "r2pipe", "Crypto", "z3"],
+    "resources": [
+        { "id": "rockyou", "path": "/usr/share/wordlists/rockyou.txt", "hint": "Uncompressed local wordlist; use only within the authorized task." },
+        { "id": "seclists", "path": "/usr/share/seclists", "hint": "Local reference dictionaries." },
+        { "id": "sqlmap-tamper", "path": "/usr/share/sqlmap/tamper", "hint": "Packaged scripts; selection still needs task-specific judgment." },
+        { "id": "nuclei-templates", "path": "/opt/redteam/share/nuclei-templates", "hint": "Pinned local templates; pass -t with this path and -duc; do not download updates during a task." },
+        { "id": "ghidra-decompile", "path": "/opt/redteam/share/ghidra/RedTeamDecompile.java", "hint": "Use ghidra-headless with -scriptPath /opt/redteam/share/ghidra and -postScript RedTeamDecompile.java OUTPUT.json; no display required." }
+    ],
+    "groups": [
+        {
+            "id": "base",
+            "label": "Shell and runtime",
+            "packages": ["ca-certificates", "curl", "wget", "git", "python3", "python3-venv", "jq", "procps", "tini", "unzip", "zip", "7zip", "python3-requests", "python3-httpx", "python3-bs4", "python3-lxml", "python3-pycryptodome", "python3-jwt", "python3-paramiko", "httpie"],
+            "commands": ["bash", "curl", "wget", "git", "python3", "node", "npm", "jq", "ps", "tini", "unzip", "zip", "7z", "http"],
+            "pythonModules": ["requests", "httpx", "bs4", "lxml", "Cryptodome", "jwt", "paramiko"]
+        },
+        {
+            "id": "network",
+            "label": "Network and protocols",
+            "packages": ["nmap", "masscan", "ncat", "netcat-openbsd", "socat", "inetutils-telnet", "bind9-dnsutils", "iproute2", "iputils-ping", "net-tools", "tcpdump", "tshark", "openssh-client", "openssl", "proxychains4", "whois", "traceroute", "chisel"],
+            "commands": ["nmap", "masscan", "fscan", "ncat", "nc", "socat", "telnet", "dig", "nslookup", "ip", "ping", "netstat", "tcpdump", "tshark", "ssh", "openssl", "proxychains4", "whois", "traceroute", "chisel", "frpc", "frps"],
+            "pythonModules": []
+        },
+        {
+            "id": "web",
+            "label": "Web, databases and reference data",
+            "packages": ["sqlmap", "nikto", "ffuf", "gobuster", "dirsearch", "whatweb", "wfuzz", "nuclei", "wpscan", "seclists", "wordlists", "exploitdb", "burpsuite"],
+            "commands": ["sqlmap", "nikto", "ffuf", "gobuster", "dirsearch", "whatweb", "wfuzz", "nuclei", "wpscan", "searchsploit", "burpsuite"],
+            "pythonModules": []
+        },
+        {
+            "id": "identity",
+            "label": "Identity, SMB, AD and authorized exploitation",
+            "packages": ["smbclient", "impacket-scripts", "python3-impacket", "netexec", "ldap-utils", "krb5-user", "enum4linux-ng", "john", "hashcat", "hydra", "metasploit-framework"],
+            "commands": ["smbclient", "impacket-smbclient", "nxc", "ldapsearch", "kinit", "enum4linux-ng", "john", "hashcat", "hydra", "msfconsole", "msfvenom"],
+            "pythonModules": ["impacket"]
+        },
+        {
+            "id": "cloud",
+            "label": "Cloud and containers",
+            "packages": ["awscli", "azure-cli", "cloud-enum", "cloudbrute", "pacu", "s3scanner", "trivy", "gitleaks", "kubectl", "kubernetes-helm"],
+            "commands": ["aws", "az", "cloud_enum", "cloudbrute", "pacu", "s3scanner", "trivy", "gitleaks", "kubectl", "helm", "mc"],
+            "pythonModules": ["boto3"]
+        },
+        {
+            "id": "binary",
+            "label": "Binary analysis, debugging and emulation",
+            "packages": ["build-essential", "gdb", "gdb-multiarch", "binutils", "binutils-x86-64-linux-gnu", "gcc-x86-64-linux-gnu", "libc6-dev-amd64-cross", "file", "strace", "ltrace", "checksec", "patchelf", "qemu-user", "python3-pwntools", "python3-ropgadget", "ropper", "python3-z3"],
+            "commands": ["gcc", "make", "gdb", "gdb-multiarch", "readelf", "objdump", "strings", "x86_64-linux-gnu-gcc", "x86_64-linux-gnu-objdump", "file", "strace", "ltrace", "checksec", "patchelf", "qemu-x86_64", "pwn", "ROPgadget", "ropper"],
+            "pythonModules": ["pwnlib", "elftools", "z3"]
+        },
+        {
+            "id": "reverse",
+            "label": "Reverse engineering and firmware",
+            "packages": ["radare2", "rizin", "ghidra", "binwalk", "python3-capstone", "python3-unicorn", "python3-keystone-engine", "python3-lief", "python3-pefile", "squashfs-tools", "cpio", "xz-utils", "lzop", "gzip", "bzip2", "zstd"],
+            "commands": ["r2", "rizin", "ghidra", "ghidra-headless", "java", "binwalk", "unsquashfs", "cpio", "xz", "lzop", "gzip", "bzip2", "zstd"],
+            "pythonModules": ["capstone", "unicorn", "keystone", "lief", "pefile"]
+        }
+    ]
+}

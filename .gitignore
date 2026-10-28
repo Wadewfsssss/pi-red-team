@@ -1,0 +1,13 @@
+node_modules/
+.pi/
+.redteam/
+.env
+.env.*
+!.env.example
+secrets/
+workspaces/
+output/
+coverage/
+*.log
+*.tgz
+.DS_Store
