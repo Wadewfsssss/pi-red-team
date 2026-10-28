@@ -1,6 +1,7 @@
 import { z } from "redteam-zod";
 import { type DomainProject } from "../state.js";
 import { type TeamLimits } from "./limits.js";
+import type { GraphAccess } from "../graph-capability.js";
 declare const leaseSchema: z.ZodObject<{
     runId: z.ZodString;
     epoch: z.ZodNumber;
@@ -74,6 +75,28 @@ export declare const teamStateSchema: z.ZodObject<{
     admissions: z.ZodDefault<z.ZodNumber>;
     deliveries: z.ZodDefault<z.ZodRecord<z.ZodString, z.ZodNumber>>;
     graphRequests: z.ZodDefault<z.ZodRecord<z.ZodString, z.ZodNumber>>;
+    graphAccess: z.ZodOptional<z.ZodObject<{
+        mode: z.ZodEnum<{
+            auto: "auto";
+            off: "off";
+        }>;
+        server: z.ZodString;
+        read: z.ZodBoolean;
+        write: z.ZodBoolean;
+        reason: z.ZodString;
+    }, z.core.$strict>>;
+    graphResults: z.ZodDefault<z.ZodRecord<z.ZodString, z.ZodObject<{
+        requestedAt: z.ZodNumber;
+        epoch: z.ZodNumber;
+        status: z.ZodEnum<{
+            unavailable: "unavailable";
+            cancelled: "cancelled";
+            failed: "failed";
+            timeout: "timeout";
+            updated: "updated";
+        }>;
+        reason: z.ZodString;
+    }, z.core.$strict>>>;
     jobWaits: z.ZodDefault<z.ZodRecord<z.ZodString, z.ZodEnum<{
         standard: "standard";
         heavy: "heavy";
@@ -135,10 +158,30 @@ export declare function recordDelivery(project: DomainProject, runId: string, wo
     findingsConfirmed: boolean;
 }>;
 export declare function requestGraphRefresh(project: DomainProject, runId: string, workerId: string): Promise<{
+    status: string;
+    reason: string;
+    graphUpdated: boolean;
+    instruction: string;
+    requestedAt?: undefined;
+    noAutomaticCypher?: undefined;
+} | {
+    graphUpdated: boolean;
+    instruction: string;
+    requestedAt: number;
+    epoch: number;
+    status: "unavailable" | "cancelled" | "failed" | "timeout" | "updated";
+    reason: string;
+    noAutomaticCypher?: undefined;
+} | {
     requestedAt: number;
     graphUpdated: boolean;
     noAutomaticCypher: boolean;
+    status?: undefined;
+    reason?: undefined;
+    instruction?: undefined;
 }>;
+export declare function setGraphAccess(project: DomainProject, runId: string, access: GraphAccess): Promise<void>;
+export declare function settleGraphRequests(project: DomainProject, runId: string, epoch: number, requests: Record<string, number>, status: "updated" | "unavailable" | "failed" | "cancelled" | "timeout", reason: string): Promise<boolean>;
 export declare function fulfillGraphRefresh(project: DomainProject, runId: string, capturedAt: number): Promise<void>;
 export declare function setJobWait(project: DomainProject, runId: string, workerId: string, resourceClass?: "standard" | "heavy"): Promise<void>;
 export declare function offerWork(project: DomainProject, runId: string, input: z.infer<typeof offerSchema>, now?: number): Promise<{
@@ -259,6 +302,12 @@ export declare function resumeTeam(project: DomainProject, runId: string, window
     admissions: number;
     deliveries: Record<string, number>;
     graphRequests: Record<string, number>;
+    graphResults: Record<string, {
+        requestedAt: number;
+        epoch: number;
+        status: "unavailable" | "cancelled" | "failed" | "timeout" | "updated";
+        reason: string;
+    }>;
     jobWaits: Record<string, "standard" | "heavy">;
     recordSequence: number;
     recordArchives: {
@@ -278,6 +327,13 @@ export declare function resumeTeam(project: DomainProject, runId: string, window
         maxConcurrentJobs: number;
         maxHeavyJobs: number;
         targetConcurrency: number;
+    } | undefined;
+    graphAccess?: {
+        mode: "auto" | "off";
+        server: string;
+        read: boolean;
+        write: boolean;
+        reason: string;
     } | undefined;
 }>;
 export declare function reconcileWork(project: DomainProject, runId: string, workItemId: string, status: "ready" | "completed", recordId?: string): Promise<{

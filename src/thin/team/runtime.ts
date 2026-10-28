@@ -2,6 +2,8 @@ import { mkdir } from "node:fs/promises";
 import { setMaxListeners } from "node:events";
 import lockfile from "proper-lockfile";
 import { z } from "redteam-zod";
+import { setGraphAccess, settleGraphRequests } from "./store.js";
+import type { GraphAccess } from "../graph-capability.js";
 import { atomicWrite, digest } from "../../files.js";
 import { domainPath, type DomainProject } from "../state.js";
 import { readBoundedFile } from "../project.js";
@@ -26,7 +28,7 @@ export interface TeamWorker {
   onActivity?(listener: (reply: WorkerReply) => void): () => void;
 }
 type WorkerFactory = (config: WorkerConfig, domain: ReturnType<typeof workerDomainAdapter>) => TeamWorker;
-type TeamModel = Pick<WorkerConfig, "provider" | "model" | "thinkingLevel" | "agentDir" | "nativeTools"> & { taskKey?: string };
+type TeamModel = Pick<WorkerConfig, "provider" | "model" | "thinkingLevel" | "agentDir" | "nativeTools"> & { taskKey?: string; graphAccess?: GraphAccess };
 
 export class TeamSupervisor {
   private workers: TeamWorker[] = [];
@@ -151,6 +153,7 @@ export class TeamSupervisor {
       }
       const nativeTools = previous?.nativeTools ? (model.nativeTools ?? []).filter(name => previous.nativeTools!.includes(name)) : model.nativeTools;
       const state = resume && previous ? await resumeTeam(this.project, previous.runId, params.windowSeconds) : await createTeam(this.project, { goal: params.goal, workerCount: Math.min(params.limits.initialWorkers, params.candidates.length), limits: params.limits, windowSeconds: params.windowSeconds });
+      if (model.graphAccess) await setGraphAccess(this.project, state.runId, model.graphAccess);
       if (previous?.version === 1) await atomicWrite(await domainPath(this.project, "team", `runtime.${previous.runId}.v1.backup.json`), JSON.stringify(previous) + "\n");
       this.checkpoint = { version: 2, limits: params.limits, runId: state.runId, parentSession, scope: params.scope, provider: model.provider, model: model.model, execution: params.execution, nativeTools, taskKey: model.taskKey ?? previous?.taskKey, maxRounds: params.maxRounds, autoContinue: params.autoContinue, maxParentTurns: params.maxParentTurns, parentTurns: previous?.parentTurns ?? 0, lastBatch: previous?.lastBatch ?? null, deliveredBatch: previous?.deliveredBatch ?? null, workers: state.workers.map(workerId => ({ workerId, rounds: previous?.workers.find(worker => worker.workerId === workerId)?.rounds ?? 0, noProgress: previous?.workers.find(worker => worker.workerId === workerId)?.noProgress ?? 0, phase: "starting", sessionPath: previous?.workers.find(worker => worker.workerId === workerId)?.sessionPath })), phase: "starting", reason: "Delegated within the current user task", runtimeStopVerified: false };
       this.modelConfig = { ...model, nativeTools };
@@ -188,7 +191,7 @@ export class TeamSupervisor {
     let instance: TeamWorker | undefined;
     try {
       if (!this.checkpoint || !this.modelConfig || this.cancelled) throw new Error("Team startup cancelled");
-      const { taskKey: _taskKey, ...model } = this.modelConfig;
+      const { taskKey: _taskKey, graphAccess: _graphAccess, ...model } = this.modelConfig;
       const config = workerConfigSchema.parse({ version: 1, cwd: this.project.cwd, ...model, workerId: worker.workerId, teamRunId: this.checkpoint.runId, execution: this.checkpoint.execution, domainTools: workerDomainSchemas(), ...(worker.sessionPath ? { resumePath: worker.sessionPath } : {}) });
       instance = this.factory(config, workerDomainAdapter(this.project, config.execution && (!config.nativeTools || config.nativeTools.includes("bash"))));
       instance.onActivity?.(reply => {
@@ -370,9 +373,12 @@ export class TeamSupervisor {
     if (!this.checkpoint) return false;
     let state = await readTeam(this.project);
     if (!state?.graphRequests[worker.workerId]) return false;
+    const requestedAt = state.graphRequests[worker.workerId]!, epoch = state.epoch;
     worker.phase = "waiting-graph"; await this.save();
-    while (this.running && !this.cancelled && state?.graphRequests[worker.workerId]) {
-      await waitForTeamChange(this.project, this.signal.signal);
+    while (this.running && !this.cancelled && state?.graphRequests[worker.workerId] === requestedAt && state.epoch === epoch) {
+      const remaining = Math.min(requestedAt + 30000, state.deadline) - Date.now();
+      if (remaining <= 0) { await settleGraphRequests(this.project, state.runId, epoch, { [worker.workerId]: requestedAt }, "timeout", "Optional graph wait expired; continue independent work"); break; }
+      await waitForTeamChange(this.project, this.signal.signal, Math.min(5000, remaining));
       state = await readTeam(this.project);
       if (!state || state.runId !== this.checkpoint.runId) throw new Error("Graph requester lost its run");
     }

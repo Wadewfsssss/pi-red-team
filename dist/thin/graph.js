@@ -2,6 +2,7 @@ import { z } from "redteam-zod";
 import { atomicWrite, digest, rejectSymlinks, safePath } from "../files.js";
 import { readBoundedFile } from "./project.js";
 import { domainPath, projectKey, resolveWorkspace } from "./state.js";
+import { bindCypher, GraphOperationError, unavailableGraph } from "./graph-capability.js";
 const identifier = z.string().min(1).max(200);
 const kind = z.enum(["asset", "identity", "observation", "hypothesis", "finding", "attack_step", "credential", "host", "service", "objective", "evidence"]);
 export const propertiesSchema = z.object({ cvss: z.number().min(0).max(10).nullable().optional(), status: z.enum(["confirmed", "needs_review", "rejected"]).nullable().optional(), confidence: z.number().min(0).max(1).nullable().optional(), risk: z.enum(["low", "medium", "high"]).nullable().optional(), technique: z.string().max(100).nullable().optional() }).strict();
@@ -21,14 +22,20 @@ export async function nativeCypher(ctx, server, write, query, signal) {
     if (!/^[A-Za-z0-9_-]+$/.test(server))
         throw new Error("Invalid MCP server name");
     signal?.throwIfAborted();
-    const prefix = `mcp__${server.replaceAll("-", "_")}__`;
-    const candidates = ctx.tools.filter(tool => tool.name.startsWith(prefix) && (write ? /write.*cypher/i : /read.*cypher/i).test(tool.name.slice(prefix.length)));
-    if (candidates.length !== 1)
-        throw new Error(`Expected one callable ${write ? "write" : "read"} Cypher tool; inspect Pi /mcp`);
-    const outcome = await ctx.executeTool(candidates[0].name, { query }, { signal });
-    if (outcome.isError)
-        throw new Error("Neo4j MCP query failed; graph persistence is not verified");
-    return outcome.result;
+    const binding = bindCypher(ctx.tools, server, write);
+    if (!binding.tool)
+        throw new GraphOperationError(`Expected one callable ${write ? "write" : "read"} Cypher tool; inspect Pi /mcp`, unavailableGraph(binding.reason, write ? "record" : "read", server));
+    try {
+        const outcome = await ctx.executeTool(binding.tool, { query }, { signal });
+        if (outcome.isError)
+            throw new GraphOperationError("Neo4j MCP query failed; graph persistence is not verified", { status: "error", reason: "query_failed", server, executed: true, persistence: write ? "unknown" : "not_applicable", diagnostic: outcome.result });
+        return outcome.result;
+    }
+    catch (error) {
+        if (error instanceof GraphOperationError)
+            throw error;
+        throw new GraphOperationError("Neo4j MCP call interrupted or failed; persistence is not verified", { status: "error", reason: signal?.aborted ? "cancelled" : "call_failed", server, executed: true, persistence: write ? "unknown" : "not_applicable", diagnostic: error instanceof Error ? error.message : String(error) });
+    }
 }
 export async function recordLink(project, ctx, server, input, signal) {
     const source = entitySchema.parse(input.source), target = entitySchema.parse(input.target), link = linkSchema.parse(input.link);
@@ -36,15 +43,17 @@ export async function recordLink(project, ctx, server, input, signal) {
         throw new Error("Graph link endpoints do not match entities");
     if (link.state === "observed" && !link.evidenceRefs.length)
         throw new Error("Observed graph links require evidence references");
+    const binding = bindCypher(ctx.tools, server, true);
+    if (!binding.tool)
+        throw new GraphOperationError("No callable graph write tool; inspect Pi /mcp", unavailableGraph(binding.reason, "record", server));
     const refs = await evidenceReferences(project, link.evidenceRefs);
-    await resolveWorkspace(project);
     for (const entry of [source, target]) {
         if (entry.kind !== "finding")
             continue;
         if (entry.properties?.status === "confirmed" && (!refs.length || link.state !== "observed"))
             throw new Error("Confirmed finding records require observed evidence references");
-        await atomicWrite(await domainPath(project, "findings", `${digest(entry.id)}.json`), JSON.stringify({ ...entry, evidence: refs, capturedAt: new Date().toISOString(), confirmationIsCallerDeclared: true }, null, 2) + "\n");
     }
+    await resolveWorkspace(project);
     const key = quote(projectKey(project));
     const hashes = JSON.stringify(refs.map(reference => reference.sha256));
     const evidence = JSON.stringify(refs.map(reference => reference.reference));
@@ -58,9 +67,23 @@ MERGE (source)-[link:RT_LINK {id: ${quote(link.id)}}]->(target)
 SET link.relation = ${quote(link.relation)}, link.state = ${quote(link.state)}, link.evidenceRefs = ${evidence}, link.evidenceHashes = ${hashes}, link.observedAt = ${quote(link.observedAt)}
 RETURN link.id AS id, link.state AS state`;
     const result = await nativeCypher(ctx, server, true, query, signal);
-    return { persisted: true, projectKey: projectKey(project), evidence: refs, result };
+    const localFindingsWritten = [];
+    try {
+        signal?.throwIfAborted();
+        for (const entry of [source, target].filter(value => value.kind === "finding")) {
+            await atomicWrite(await domainPath(project, "findings", `${digest(entry.id)}.json`), JSON.stringify({ ...entry, evidence: refs, capturedAt: new Date().toISOString(), confirmationIsCallerDeclared: true, graphPersistence: "acknowledged" }, null, 2) + "\n");
+            localFindingsWritten.push(entry.id);
+        }
+    }
+    catch (error) {
+        throw new GraphOperationError("Graph write acknowledged but local recording failed", { status: "error", reason: "local_record_failed", executed: true, persisted: true, persistence: "acknowledged", localFindingsWritten, diagnostic: error instanceof Error ? error.message : String(error) });
+    }
+    return { persisted: true, persistence: "acknowledged", localFindingsWritten, projectKey: projectKey(project), evidence: refs, result };
 }
 export async function graphSnapshot(project, ctx, server, signal) {
+    const binding = bindCypher(ctx.tools, server, false);
+    if (!binding.tool)
+        throw new GraphOperationError("No callable graph read tool; inspect Pi /mcp", unavailableGraph(binding.reason, "read", server));
     await resolveWorkspace(project);
     const result = await nativeCypher(ctx, server, false, `MATCH (source:RTEntity {projectId: ${quote(projectKey(project))}})-[link:RT_LINK]->(target:RTEntity {projectId: ${quote(projectKey(project))}})
 RETURN link.id AS id, source.id AS source, target.id AS target, link.relation AS relation, link.state AS state, link.evidenceRefs AS evidenceRefs, link.evidenceHashes AS evidenceHashes, link.observedAt AS observedAt, source.kind AS sourceKind, target.kind AS targetKind,

@@ -7,6 +7,7 @@ import { evidenceReferences } from "../graph.js";
 import { domainPath, mutateState, projectKey, resolveWorkspace, type DomainProject } from "../state.js";
 import { resolveTeamLimits, teamLimitsSchema, type TeamLimits } from "./limits.js";
 import { teamChanged } from "./events.js";
+import type { GraphAccess } from "../graph-capability.js";
 
 const uuid = z.string().uuid();
 const short = z.string().min(1).max(500);
@@ -32,6 +33,8 @@ export const teamStateSchema = z.object({
   limits: teamLimitsSchema.optional(), admissions: z.number().int().min(0).max(64).default(0),
   deliveries: z.record(z.string(), z.number().int().min(0)).default({}),
   graphRequests: z.record(z.string(), z.number().int().min(0)).default({}),
+  graphAccess: z.object({ mode: z.enum(["auto", "off"]), server: z.string().regex(/^[A-Za-z0-9_-]+$/), read: z.boolean(), write: z.boolean(), reason: z.string().max(200) }).strict().optional(),
+  graphResults: z.record(z.string(), z.object({ requestedAt: z.number().int().nonnegative(), epoch: z.number().int().positive(), status: z.enum(["updated", "unavailable", "failed", "cancelled", "timeout"]), reason: z.string().max(200) }).strict()).default({}),
   jobWaits: z.record(z.string(), z.enum(["standard", "heavy"])).default({}),
   recordSequence: z.number().int().min(0).default(0),
   recordArchives: z.array(archiveSchema).max(128).default([]),
@@ -153,15 +156,50 @@ export async function requestGraphRefresh(project: DomainProject, runId: string,
   return mutateTeam(project, state => {
     active(state, runId, Date.now());
     if (!state.workers.includes(workerId)) throw new Error("Unknown graph requester");
-    state.graphRequests[workerId] ??= Date.now();
+    if (state.graphAccess && (state.graphAccess.mode === "off" || !state.graphAccess.read)) return { status: "unavailable", reason: state.graphAccess.reason, graphUpdated: false, instruction: "Continue non-graph work; graph-specific work remains blocked. No refresh was queued." };
+    const previous = state.graphResults[workerId];
+    if (previous && previous.epoch === state.epoch && previous.status !== "updated") return { ...previous, graphUpdated: false, instruction: "Do not repeatedly request unavailable graph; continue independent work until capability changes or main Pi explicitly refreshes." };
+    state.graphRequests[workerId] ??= Math.max(Date.now(), (previous?.requestedAt ?? 0) + 1);
     return { requestedAt: state.graphRequests[workerId], graphUpdated: false, noAutomaticCypher: true };
+  });
+}
+
+export async function setGraphAccess(project: DomainProject, runId: string, access: GraphAccess) {
+  const current = await readTeam(project);
+  if (!current || current.runId !== runId || JSON.stringify(current.graphAccess) === JSON.stringify(access)) return;
+  return mutateTeam(project, state => {
+    if (state.runId !== runId) throw new Error("Graph access run changed");
+    const switched = state.graphAccess?.server !== access.server;
+    state.graphAccess = access;
+    if (access.mode === "auto" && access.read) state.graphResults = {};
+    if (access.mode === "off" || !access.read || switched) {
+      for (const [workerId, requestedAt] of Object.entries(state.graphRequests)) {
+        state.graphResults[workerId] = { requestedAt, epoch: state.epoch, status: "unavailable", reason: access.mode === "off" ? "disabled" : switched ? "server_changed" : access.reason };
+        delete state.graphRequests[workerId];
+      }
+    }
+  });
+}
+
+export async function settleGraphRequests(project: DomainProject, runId: string, epoch: number, requests: Record<string, number>, status: "updated" | "unavailable" | "failed" | "cancelled" | "timeout", reason: string) {
+  return mutateTeam(project, state => {
+    if (state.runId !== runId || state.epoch !== epoch) return false;
+    for (const [workerId, requestedAt] of Object.entries(requests)) {
+      if (state.graphRequests[workerId] !== requestedAt) continue;
+      state.graphResults[workerId] = { requestedAt, epoch, status, reason: reason.slice(0, 200) };
+      delete state.graphRequests[workerId];
+    }
+    return true;
   });
 }
 
 export async function fulfillGraphRefresh(project: DomainProject, runId: string, capturedAt: number) {
   return mutateTeam(project, state => {
     active(state, runId, Date.now());
-    for (const [workerId, requestedAt] of Object.entries(state.graphRequests)) if (requestedAt <= capturedAt) delete state.graphRequests[workerId];
+    for (const [workerId, requestedAt] of Object.entries(state.graphRequests)) if (requestedAt <= capturedAt) {
+      state.graphResults[workerId] = { requestedAt, epoch: state.epoch, status: "updated", reason: "snapshot_updated" };
+      delete state.graphRequests[workerId];
+    }
   });
 }
 

@@ -2,7 +2,7 @@
 
 一个薄的 Pi 红队扩展：Pi 负责模型、原生工具、会话与压缩；插件补充证据、搜索、图辅助、可选协作和长作业监督。不围绕 Pi 再造 Agent 平台。
 
-当前版本：**1.0.0-rc.11**，测试候选。仓库先以私有形式维护，尚未指定对外开源许可证，也未发布公共 npm 包。
+当前版本：**1.0.0-rc.12**，测试候选。仓库先以私有形式维护，尚未指定对外开源许可证，也未发布公共 npm 包。
 
 ## 安装
 
@@ -13,13 +13,13 @@
 私有 Git 仓库需要该环境已具备 GitHub 读取权限；不要把访问令牌打进镜像。固定版本安装：
 
 ```sh
-pi install git:github.com/Wadewfsssss/pi-red-team@v1.0.0-rc.11
+pi install git:github.com/Wadewfsssss/pi-red-team@v1.0.0-rc.12
 ```
 
 默认写入当前环境的个人 Pi 配置。若只希望登记到当前项目，可使用原生本地安装选项：
 
 ```sh
-pi install --local git:github.com/Wadewfsssss/pi-red-team@v1.0.0-rc.11
+pi install --local git:github.com/Wadewfsssss/pi-red-team@v1.0.0-rc.12
 ```
 
 安装后退出并重新启动 Pi。在授权工作目录中直接描述任务；不需要 `/rt open`、`.redteam/project.json` 或另一套任务系统。
@@ -35,6 +35,7 @@ pi install --local git:github.com/Wadewfsssss/pi-red-team@v1.0.0-rc.11
 | `rt_graph` | 利用原生 Neo4j MCP 做关系与路径辅助；不是全部动作必经的图状态机 |
 | `rt_job` | Linux 前台长命令、增量输出、状态、取消、超时及不确定状态检查 |
 | `rt_team` | 模型提出独立候选，在当前授权范围内自动启动，内部 Worker 自主认领、共享证据和增量交接 |
+| `/rt graph status` / `off` / `auto [server]` | 检查或切换可选图增强，选择保存在 Pi 原生会话分支 |
 | `/rt doctor` | 检查实际环境能力，不执行目标扫描 |
 | `/rt team status` / `stop` / `recover` | 检查与监督可选协作；未知执行不会自动重放 |
 
@@ -45,12 +46,18 @@ pi install --local git:github.com/Wadewfsssss/pi-red-team@v1.0.0-rc.11
 ## 环境与配置
 
 - 模型沿用 Pi 的 `~/.pi/agent/models.json`；不修改上下文、输出上限或 thinking。
-- Neo4j 连接配置在 Pi 的原生 MCP 配置中；仓库不包含账户、密码或私人连接地址。
+- Neo4j 是可选增强，连接配置在 Pi 原生 MCP 配置中；无可调用图工具时普通执行、证据、搜索、长作业和协作继续，图相关子任务如实报告 blocked。仓库不包含账户、密码或私人连接地址。
 - Kali 是系统工具环境，独立于插件安装。安装本包不会自动安装 nmap、fscan、Ghidra 等。
 - 长作业需要 Linux/Kali；宿主 macOS 的普通操作仍使用 Pi 原生工具。
 - Pi 管理原生会话与压缩；不添加插件压缩循环或自动恢复未知命令。
 
-## rc.11 自动协作
+## rc.12 可选图增强
+
+默认 auto 使用原生 Neo4j MCP，读写能力分别检查；可调用不等于数据库健康。`/rt graph off` 仅关闭插件图增强，不关闭 MCP 或改变原生工具权限；`/rt graph auto <服务名>` 选择原生服务。无需增加项目配置。
+
+原生写入成功响应后才保存本地 Finding；未知写入和响应后的本地保存失败分别报告，不自动重放。Worker 图请求无依赖、失败或超时后退出等待，原预算不续期。图快照绑定运行、工作区和服务，并在使用时复核证据哈希。
+
+## 自动协作
 
 普通团队启动与有效恢复不再额外弹出插件确认，支持 TUI 和 RPC/headless。Worker 原生工具只能继承父 Pi 启动时开放的工具集合，不能扩大权限；父会话没有 bash 时不能执行 rt_job 命令。
 
@@ -79,6 +86,6 @@ npm run build
 
 本仓库包含插件源码、编译产物、通用文档和隔离测试。没有上传旧主控、Kali 镜像、基准客户端、靶场数据、真实模型配置、密码、会话或执行日志。
 
-母工程 rc.11 的技术门禁包含 150 次测试执行成功及隔离 Neo4j / Kali；这是先前完整环境的验证记录，不代表 Git 分发路径已经经过相同的整镜像验收。本仓库测试只运行自有临时数据与脚本化提供方；真实模型效果、多天稳定性和生产放行仍需另行验收。
+母工程 rc.12 的技术门禁包含 167 次测试执行成功及隔离 Neo4j / Kali；这是先前完整环境的验证记录，不代表 Git 分发路径已经经过相同的整镜像验收。本仓库测试只运行自有临时数据与脚本化提供方；真实模型效果、多天稳定性和生产放行仍需另行验收。
 
 第三方代码与许可证见 `THIRD_PARTY_NOTICES.md`。当前 `private: true` 用于防止误发布到 npm；不影响 Pi 的 Git 安装。

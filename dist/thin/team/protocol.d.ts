@@ -2,8 +2,8 @@ import { z } from "redteam-zod";
 export declare const nativeToolSchema: z.ZodEnum<{
     bash: "bash";
     find: "find";
-    write: "write";
     read: "read";
+    write: "write";
     grep: "grep";
     ls: "ls";
     edit: "edit";
@@ -16,10 +16,10 @@ export declare const workerConfigSchema: z.ZodObject<{
     provider: z.ZodString;
     model: z.ZodString;
     thinkingLevel: z.ZodEnum<{
+        off: "off";
         low: "low";
         medium: "medium";
         high: "high";
-        off: "off";
         minimal: "minimal";
         xhigh: "xhigh";
         max: "max";
@@ -30,17 +30,17 @@ export declare const workerConfigSchema: z.ZodObject<{
     nativeTools: z.ZodOptional<z.ZodArray<z.ZodEnum<{
         bash: "bash";
         find: "find";
-        write: "write";
         read: "read";
+        write: "write";
         grep: "grep";
         ls: "ls";
         edit: "edit";
     }>>>;
     domainTools: z.ZodDefault<z.ZodArray<z.ZodObject<{
         name: z.ZodEnum<{
+            rt_graph: "rt_graph";
             rt_campaign: "rt_campaign";
             rt_search: "rt_search";
-            rt_graph: "rt_graph";
             rt_job: "rt_job";
         }>;
         description: z.ZodString;
@@ -94,9 +94,9 @@ export declare const teamToolInputSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
 }, z.core.$strict>, z.ZodObject<{
     action: z.ZodLiteral<"domain">;
     tool: z.ZodEnum<{
+        rt_graph: "rt_graph";
         rt_campaign: "rt_campaign";
         rt_search: "rt_search";
-        rt_graph: "rt_graph";
         rt_job: "rt_job";
     }>;
     params: z.ZodRecord<z.ZodString, z.ZodUnknown>;
@@ -151,9 +151,9 @@ export declare const teamToolRequestSchema: z.ZodObject<{
     }, z.core.$strict>, z.ZodObject<{
         action: z.ZodLiteral<"domain">;
         tool: z.ZodEnum<{
+            rt_graph: "rt_graph";
             rt_campaign: "rt_campaign";
             rt_search: "rt_search";
-            rt_graph: "rt_graph";
             rt_job: "rt_job";
         }>;
         params: z.ZodRecord<z.ZodString, z.ZodUnknown>;
@@ -178,10 +178,10 @@ export declare const workerCommandSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
         provider: z.ZodString;
         model: z.ZodString;
         thinkingLevel: z.ZodEnum<{
+            off: "off";
             low: "low";
             medium: "medium";
             high: "high";
-            off: "off";
             minimal: "minimal";
             xhigh: "xhigh";
             max: "max";
@@ -192,17 +192,17 @@ export declare const workerCommandSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
         nativeTools: z.ZodOptional<z.ZodArray<z.ZodEnum<{
             bash: "bash";
             find: "find";
-            write: "write";
             read: "read";
+            write: "write";
             grep: "grep";
             ls: "ls";
             edit: "edit";
         }>>>;
         domainTools: z.ZodDefault<z.ZodArray<z.ZodObject<{
             name: z.ZodEnum<{
+                rt_graph: "rt_graph";
                 rt_campaign: "rt_campaign";
                 rt_search: "rt_search";
-                rt_graph: "rt_graph";
                 rt_job: "rt_job";
             }>;
             description: z.ZodString;

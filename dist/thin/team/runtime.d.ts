@@ -1,4 +1,5 @@
 import { z } from "redteam-zod";
+import type { GraphAccess } from "../graph-capability.js";
 import { type DomainProject } from "../state.js";
 import { type WorkerConfig, type WorkerReply, type WorkerView } from "./protocol.js";
 import { workerDomainAdapter } from "./domain-adapter.js";
@@ -92,6 +93,7 @@ export interface TeamWorker {
 type WorkerFactory = (config: WorkerConfig, domain: ReturnType<typeof workerDomainAdapter>) => TeamWorker;
 type TeamModel = Pick<WorkerConfig, "provider" | "model" | "thinkingLevel" | "agentDir" | "nativeTools"> & {
     taskKey?: string;
+    graphAccess?: GraphAccess;
 };
 export declare class TeamSupervisor {
     readonly project: DomainProject;
@@ -153,7 +155,7 @@ export declare class TeamSupervisor {
             phase: "running" | "paused" | "stopped" | "starting" | "attention";
             reason: string;
             runtimeStopVerified: boolean;
-            nativeTools?: ("bash" | "find" | "write" | "read" | "grep" | "ls" | "edit")[] | undefined;
+            nativeTools?: ("bash" | "find" | "read" | "write" | "grep" | "ls" | "edit")[] | undefined;
             taskKey?: string | undefined;
             limits?: {
                 maxWorkers: number;
@@ -208,6 +210,12 @@ export declare class TeamSupervisor {
             admissions: number;
             deliveries: Record<string, number>;
             graphRequests: Record<string, number>;
+            graphResults: Record<string, {
+                requestedAt: number;
+                epoch: number;
+                status: "unavailable" | "cancelled" | "failed" | "timeout" | "updated";
+                reason: string;
+            }>;
             jobWaits: Record<string, "standard" | "heavy">;
             recordSequence: number;
             recordArchives: {
@@ -227,6 +235,13 @@ export declare class TeamSupervisor {
                 maxConcurrentJobs: number;
                 maxHeavyJobs: number;
                 targetConcurrency: number;
+            } | undefined;
+            graphAccess?: {
+                mode: "auto" | "off";
+                server: string;
+                read: boolean;
+                write: boolean;
+                reason: string;
             } | undefined;
         } | undefined;
         coverageNotes: {

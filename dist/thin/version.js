@@ -1,2 +1,2 @@
-export const extensionVersion = "1.0.0-rc.11";
-export const extensionBuild = "thin-v8-autonomous-cooperation";
+export const extensionVersion = "1.0.0-rc.12";
+export const extensionBuild = "thin-v9-optional-graph";

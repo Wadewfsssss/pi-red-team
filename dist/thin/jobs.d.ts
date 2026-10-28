@@ -43,10 +43,10 @@ declare const stateSchema: z.ZodObject<{
         hostname: z.ZodString;
     }, z.core.$strict>;
     phase: z.ZodEnum<{
+        cancelled: "cancelled";
         completed: "completed";
         running: "running";
         failed: "failed";
-        cancelled: "cancelled";
         timed_out: "timed_out";
     }>;
     startedAt: z.ZodString;

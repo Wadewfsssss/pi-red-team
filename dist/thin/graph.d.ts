@@ -131,6 +131,8 @@ export declare function recordLink(project: DomainProject, ctx: ExtensionToolCon
     link: GraphLink;
 }, signal?: AbortSignal): Promise<{
     persisted: boolean;
+    persistence: string;
+    localFindingsWritten: string[];
     projectKey: string;
     evidence: {
         reference: string;

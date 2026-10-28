@@ -7,6 +7,7 @@ import { cancelJob, jobStatus, listJobs, readJobOutput, startJob } from "./jobs.
 import { loadProject } from "./project.js";
 import { z } from "redteam-zod";
 import { campaignAction, campaignInput } from "./campaign.js";
+import { GraphCapability, GraphOperationError } from "./graph-capability.js";
 const identifier = Type.String({ minLength: 1, maxLength: 80, pattern: "^[A-Za-z0-9_-]+$" });
 const text = Type.String({ minLength: 1, maxLength: 500 });
 const unit = Type.Number({ minimum: 0, maximum: 1 });
@@ -39,7 +40,7 @@ async function projectFor(ctx) {
         throw new Error(project.reason);
     return project;
 }
-export function registerDomainTools(pi) {
+export function registerDomainTools(pi, graph = new GraphCapability(pi)) {
     const result = (value) => {
         const text = JSON.stringify(value);
         const data = JSON.parse(text);
@@ -127,8 +128,9 @@ export function registerDomainTools(pi) {
     });
     pi.registerTool({
         name: "rt_graph", label: "Red-team graph assistance", exposure: "direct", namespace, outputSchema,
+        prepareLoadout: loadout => graph.prepare(loadout),
         description: "Use when a next action depends on relationships between hosts, services, identities or access prerequisites. Record interpreted evidence-linked relationships; query next steps, chains, severity, provenance or chokepoints through ChainGraph and native Neo4j MCP. Paths are candidates, not exploitation proof. Credential names must be references, never secrets. Workspace filters are not permission isolation.",
-        reachesTools: input => [`mcp__${String(input.server ?? "neo4j").replaceAll("-", "_")}`], executionMode: "sequential",
+        reachesTools: input => graph.reaches(input.server), executionMode: "sequential",
         parameters: Type.Object({
             action: Type.Union([Type.Literal("snapshot"), Type.Literal("record"), Type.Literal("paths"), Type.Literal("query")]), server: Type.Optional(Type.String({ pattern: "^[A-Za-z0-9_-]+$" })),
             query: Type.Optional(Type.Union([Type.Literal("next"), Type.Literal("chains"), Type.Literal("severity"), Type.Literal("evidence"), Type.Literal("chokepoints")])),
@@ -137,25 +139,33 @@ export function registerDomainTools(pi) {
             sourceId: Type.Optional(text), targetId: Type.Optional(text), maxAgeSeconds: Type.Optional(Type.Integer({ minimum: 1, maximum: 2592000 })),
         }),
         async execute(_id, params, signal, _onUpdate, ctx) {
-            const project = await projectFor(ctx);
-            const server = params.server ?? "neo4j";
-            if (params.action === "record") {
-                if (!params.source || !params.target || !params.link)
-                    throw new Error("source, target and link are required");
-                const input = JSON.parse(JSON.stringify({ source: params.source, target: params.target, link: params.link }));
-                return result(await recordLink(project, ctx, server, input, signal));
-            }
-            const links = await graphSnapshot(project, ctx, server, signal);
-            if (params.action === "snapshot")
-                return result({ projectScoped: true, permissionIsolation: false, links });
-            if (params.action === "query") {
-                if (!params.query)
-                    throw new Error("query is required");
-                return result(reasonGraph(links, params.query, { sourceId: params.sourceId, targetId: params.targetId, maxAgeSeconds: params.maxAgeSeconds }));
-            }
-            if (!params.sourceId || !params.targetId)
+            if (params.action === "record" && (!params.source || !params.target || !params.link))
+                throw new Error("source, target and link are required");
+            if (params.action === "query" && !params.query)
+                throw new Error("query is required");
+            if (params.action === "paths" && (!params.sourceId || !params.targetId))
                 throw new Error("sourceId and targetId are required");
-            return result(candidatePaths(links, params.sourceId, params.targetId, Date.now(), params.maxAgeSeconds));
+            try {
+                const value = await graph.run(ctx, params.server, params.action === "record", signal, async (combined, server) => {
+                    const project = await projectFor(ctx);
+                    combined.throwIfAborted();
+                    if (params.action === "record")
+                        return recordLink(project, ctx, server, JSON.parse(JSON.stringify({ source: params.source, target: params.target, link: params.link })), combined);
+                    const links = await graphSnapshot(project, ctx, server, combined);
+                    combined.throwIfAborted();
+                    if (params.action === "snapshot")
+                        return { executed: true, projectScoped: true, permissionIsolation: false, links };
+                    if (params.action === "query")
+                        return reasonGraph(links, params.query, { sourceId: params.sourceId, targetId: params.targetId, maxAgeSeconds: params.maxAgeSeconds });
+                    return candidatePaths(links, params.sourceId, params.targetId, Date.now(), params.maxAgeSeconds);
+                });
+                return result(value);
+            }
+            catch (error) {
+                if (!(error instanceof GraphOperationError))
+                    throw error;
+                return { ...result(error.data), ...(error.data.status === "error" ? { isError: true } : {}) };
+            }
         },
     });
     pi.registerTool({

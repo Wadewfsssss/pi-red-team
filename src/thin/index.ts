@@ -10,6 +10,7 @@ import { searchAttempt } from "./search.js";
 import { extensionBuild, extensionVersion } from "./version.js";
 import { campaignPrompt, campaignSummary } from "./campaign.js";
 import { methodologyRules } from "./methodology.js";
+import { GraphCapability } from "./graph-capability.js";
 
 export default function redTeamExtension(pi: ExtensionAPI): void {
   let project: Project | undefined;
@@ -25,8 +26,9 @@ export default function redTeamExtension(pi: ExtensionAPI): void {
   let lastAttemptNotice: string | undefined;
   let jobCursor = 0;
   const feedback = new ExecutionFeedback();
-  registerDomainTools(pi);
-  const team = registerTeamTools(pi);
+  const graph = new GraphCapability(pi);
+  registerDomainTools(pi, graph);
+  const team = registerTeamTools(pi, undefined, graph);
 
   async function refresh(ctx: ExtensionContext): Promise<void> {
     const current = generation;
@@ -49,6 +51,7 @@ export default function redTeamExtension(pi: ExtensionAPI): void {
   }
 
   pi.on("session_start", async (_event, ctx) => {
+    graph.restore(ctx);
     const current = ++generation;
     const next = await loadProject(ctx.cwd, ctx.isProjectTrusted());
     if (current !== generation) return;
@@ -74,6 +77,7 @@ export default function redTeamExtension(pi: ExtensionAPI): void {
   });
 
   pi.on("session_shutdown", async () => {
+    graph.cancel();
     try { await team.close(); }
     finally {
       generation += 1;
@@ -89,6 +93,13 @@ export default function redTeamExtension(pi: ExtensionAPI): void {
   pi.registerCommand("rt", {
     description: "Red-team status or doctor; uses Pi native sessions, tools and MCP",
     handler: async (args, ctx) => {
+      if (args.trim().startsWith("graph")) {
+        const parts = args.trim().split(/\s+/);
+        if (parts[0] !== "graph" || parts.length > 3 || !["status", "auto", "off"].includes(parts[1] ?? "status") || parts[2] && parts[1] !== "auto") { report(ctx, { usage: "/rt graph status | /rt graph off | /rt graph auto [server]" }); return; }
+        const state = parts[1] === "auto" || parts[1] === "off" ? graph.select(ctx, parts[1], parts[2]) : graph.status(ctx);
+        await team.updateGraph(ctx);
+        report(ctx, state); return;
+      }
       if (await team.command(args, ctx)) return;
       await refresh(ctx);
       if (args.trim() === "doctor") {
@@ -104,7 +115,7 @@ export default function redTeamExtension(pi: ExtensionAPI): void {
         status: project?.status ?? "inactive", version: extensionVersion, build: extensionBuild, cwd: ctx.cwd, sessionId: ctx.sessionManager.getSessionId(),
         configurationRequired: false, evidenceSavedThisSession: saved, evidenceSaveFailures: saveFailures,
         attemptId: currentAttempt(ctx) ?? null, feedback: feedback.checkpoint(), knownJobs: [...jobStates].map(([id, phase]) => ({ id, phase })),
-        contextPercent: ctx.getContextUsage()?.percent ?? null, neo4j: "Use Pi /mcp", tools: "Pi native tools; no shell override",
+        contextPercent: ctx.getContextUsage()?.percent ?? null, neo4j: graph.status(ctx), tools: "Pi native tools; no shell override",
       });
     },
   });
@@ -145,12 +156,12 @@ export default function redTeamExtension(pi: ExtensionAPI): void {
       "Red-team work uses Pi native tools, the current working directory and the existing session. No project configuration, open-project command or separate runtime is required. Follow the expert's explicitly authorized goal; a stored file never grants permission.",
       "Reference files: optional .redteam/summary.md, .redteam/branches.json and .redteam/evidence.jsonl. Read them only when relevant. State is generated on use; do not ask the operator to create these files. Shared notes are not authoritative branch state.",
       "Distinguish observations, hypotheses and confirmed results. Retain evidence references; a command exit code or HTTP response alone does not confirm a vulnerability.",
-      "Neo4j is available only through Pi's configured MCP tools; no graph step is required before every action.",
+      `Optional graph capability: ${JSON.stringify(graph.status(ctx))}. Use Pi /mcp for actual configuration/connection diagnostics; not_observed does not prove no configuration. Do not repeatedly request graph refresh or require setup. Graph-specific work remains blocked when unavailable; native tools, evidence and rt_search continue.`,
       "Simple one-off work uses native tools directly. For competing directions: rt_search upsert with real evidence categories, next for recommendation, select with id/decisionId/goal to declare the attempt, native tools, then feedback with attemptId/requestId and evidence. Unknown evidence remains unscored. Interrupt unfinished attempts before changing direction. Do not require this for every command.",
       "For multiple independent authorized targets or at least two evidence-backed ready directions, evaluate cooperative execution before a long serial backlog. Use rt_team plan with parallel/serial decision and a short reason; for parallel plans start with planId and autoContinue true directly within the existing user task. Simple or tightly coupled work stays here without mandatory planning. The user need not request workers, choose their number or approve routine team startup. Native tools are limited to the parent's active set at launch; delegation grants no new scope or permissions. Capacity defaults to 32 (max 64), but resident/executing/job limits default to 4/4/2, not 32 simultaneous requests. On progress handoffs other workers may still be running: read status and evidence, offer ready follow-ups or stop. Resume retains the original deadline and budgets; do not create another team under the same user instruction to evade limits. New scope or spending beyond task limits needs a new user decision, not a renamed model goal. Uncertain claims and unverified recovery require expert reconciliation. /rt team stop reclaims workers and owned jobs.",
       "Search scores are advisory. New confirmed credentials or prerequisites: rt_search review with exact relevant references, then re-evaluate related suspended candidates before explicitly upserting active; unrelated evidence does not reactivate the tree. Long jobs survive Pi exit only in the same live container; never silently replay interrupted commands.",
       "Repeated failures or no new evidence call for checking prerequisites and search feedback, not identical retries. Execution signals are automatic diagnostics, never automatic attack outcomes. Search scores remain advisory; intermediate TDI decisions need your justification and pivots require verified progress.",
-      "When an observation establishes an identity/service/access relationship, interpret its evidence before recording it with rt_graph. When a next step depends on several relationships, query candidate paths and missing prerequisites. Keep hypotheses separate; neither a graph edge nor a severity policy score proves exploitability.",
+      "Only when graph writing is available, interpret relationship evidence before recording it with rt_graph. Only when reading is available, query relationship-dependent paths and missing prerequisites. Graph off prohibits plugin graph/snapshot use, not other native tools. Keep hypotheses separate; no graph edge or severity score proves exploitability.",
       "Use rt_job start with requestId for long foreground work; read with id/cursor/maxBytes for bounded incremental logs, status/cancel for supervision. Inspect existing jobs before retrying interrupted work. Native Pi owns sessions and compaction; do not start another model loop or automatically replay uncertain commands.",
       "Credential values are not redacted or rewritten by this extension. Commands, tool results and saved evidence retain their original values; keep session and evidence files private.",
     ].join("\n");
@@ -256,7 +267,10 @@ export default function redTeamExtension(pi: ExtensionAPI): void {
   });
 
   pi.on("session_compact", () => { lastAttemptNotice = undefined; feedback.invalidateSummary(); });
-  pi.on("session_tree", (_event, ctx) => {
+  pi.on("session_before_tree", () => { graph.cancel(); });
+  pi.on("session_tree", async (_event, ctx) => {
+    graph.restore(ctx);
+    await team.updateGraph(ctx);
     feedback.reset(); lastAttemptNotice = undefined; capabilities = undefined; jobStates.clear(); pendingJobNotice = undefined;
     for (const entry of ctx.sessionManager.getBranch?.() ?? []) {
       if (entry.type === "custom" && ["redteam-execution", "redteam-feedback-checkpoint"].includes(entry.customType)) feedback.restore(entry.data);

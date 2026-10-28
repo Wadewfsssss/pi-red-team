@@ -1,4 +1,5 @@
 import { z } from "redteam-zod";
+import { unavailableGraph } from "../graph-capability.js";
 import type { ExtensionAPI, ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { registerDomainTools } from "../domain.js";
 import { assessBranches, branchInput, interruptSearchAttempt, listBranches, nextSearchStep, recordFeedback, reviewSearchBranches, searchAttempt, selectSearchBranch, upsertBranch } from "../search.js";
@@ -7,7 +8,7 @@ import { reasonGraph } from "../graph-reasoning.js";
 import { cancelJob, jobStatus, listOwnedJobs, readJobOutput, startJob } from "../jobs.js";
 import { domainPath, type DomainProject } from "../state.js";
 import { readBoundedFile } from "../project.js";
-import { digest } from "../../files.js";
+import { digest, rejectSymlinks, safePath } from "../../files.js";
 import { readTeam, validateWork, type WorkLease } from "./store.js";
 import type { TeamToolInput, WorkerConfig } from "./protocol.js";
 import { campaignAction, type CampaignInput } from "../campaign.js";
@@ -69,10 +70,43 @@ export function workerDomainAdapter(project: DomainProject, execution: boolean) 
       }
       if (input.tool === "rt_graph") {
         const parsed = graphInput.parse(params);
-        const snapshot = z.object({ runId: z.string().uuid(), capturedAt: z.number(), links: z.array(linkSchema).max(256) }).strict().parse(JSON.parse((await readBoundedFile(await domainPath(project, "team", "graph.json"), 1024 * 1024)).toString("utf8")));
+        const state = await readTeam(project);
+        if (!state || state.runId !== lease.runId || state.epoch !== lease.epoch) throw new Error("Graph claim lost its run");
+        const server = state.graphAccess?.server ?? "neo4j";
+        if (state.graphAccess?.mode === "off") return unavailableGraph("disabled", parsed.action, server);
+        let content: Buffer;
+        try { content = await readBoundedFile(await domainPath(project, "team", `graph.${state.runId}.${state.epoch}.${server.replaceAll("-", "_")}.json`), 1024 * 1024); }
+        catch (error) {
+          if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+          try { content = await readBoundedFile(await domainPath(project, "team", "graph.json"), 1024 * 1024); }
+          catch (fallback) { if ((fallback as NodeJS.ErrnoException).code === "ENOENT") return unavailableGraph("snapshot_missing", parsed.action, server); throw fallback; }
+        }
+        const snapshot = z.object({ runId: z.string().uuid(), epoch: z.number().int().positive().optional(), workspaceKey: z.string().regex(/^[a-f0-9]{64}$/).optional(), server: z.string().optional(), capturedAt: z.number().finite(), links: z.array(linkSchema).max(256) }).strict().parse(JSON.parse(content.toString("utf8")));
         if (snapshot.runId !== lease.runId) throw new Error("Graph snapshot is from another run; ask main Pi to refresh");
-        const ageSeconds = Math.max(0, (Date.now() - snapshot.capturedAt) / 1000);
-        if (ageSeconds > (parsed.maxAgeSeconds ?? 86400)) throw new Error("Graph snapshot expired; ask main Pi to refresh");
+        if (!snapshot.epoch || !snapshot.workspaceKey || !snapshot.server) return unavailableGraph("snapshot_unbound", parsed.action, server);
+        if (snapshot.epoch !== state.epoch || snapshot.workspaceKey !== state.workspaceKey || snapshot.server !== server) throw new Error("Graph snapshot workspace, epoch or server does not match the run");
+        if (snapshot.capturedAt > Date.now()) throw new Error("Graph snapshot has a future timestamp");
+        const ageSeconds = (Date.now() - snapshot.capturedAt) / 1000;
+        if (ageSeconds > (parsed.maxAgeSeconds ?? 86400)) return unavailableGraph("snapshot_expired", parsed.action, server);
+        if (new Set(snapshot.links.map(link => link.id)).size !== snapshot.links.length) throw new Error("Duplicate graph relationship IDs");
+        const references = new Map<string, string | null>();
+        let bytes = 0;
+        for (const link of snapshot.links) {
+          for (const reference of link.evidenceRefs) {
+            if (references.has(reference)) continue;
+            if (references.size >= 256 || bytes >= 16 * 1024 * 1024) { references.set(reference, null); continue; }
+            try {
+              const path = safePath(project.cwd, reference);
+              await rejectSymlinks(project.cwd, path);
+              const buffer = await readBoundedFile(path, 16 * 1024 * 1024 - bytes);
+              bytes += buffer.length; references.set(reference, digest(buffer));
+            } catch { references.set(reference, null); }
+          }
+          link.evidenceVerified = link.evidenceRefs.length > 0 && link.evidenceHashes?.length === link.evidenceRefs.length && link.evidenceRefs.every((reference, index) => references.get(reference) === link.evidenceHashes?.[index]);
+        }
+        const latest = await readTeam(project);
+        if (latest?.graphAccess?.mode === "off") return unavailableGraph("disabled", parsed.action, server);
+        if (latest?.runId !== lease.runId || latest.epoch !== lease.epoch || latest.graphAccess?.server && latest.graphAccess.server !== server) throw new Error("Graph binding changed during reasoning");
         const metadata = { snapshot: true, capturedAt: snapshot.capturedAt, ageSeconds, liveNeo4j: false, conclusionVerified: false };
         if (parsed.action === "snapshot") return { ...metadata, links: snapshot.links };
         if (parsed.action === "query") {
