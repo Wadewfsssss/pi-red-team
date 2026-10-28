@@ -7,7 +7,6 @@ import { createBashTool, type ExtensionAPI } from "@earendil-works/pi-coding-age
 import extension from "../src/thin/index.js";
 import { loadProject } from "../src/thin/project.js";
 import { EvidenceWriter } from "../src/thin/evidence.js";
-import { campaignAction } from "../src/thin/campaign.js";
 
 async function fixture(configured = true) {
   const cwd = await realpath(await mkdtemp(join(tmpdir(), "thin-redteam-")));
@@ -15,13 +14,14 @@ async function fixture(configured = true) {
   if (configured) { await mkdir(join(cwd, ".redteam"), { mode: 0o700 }); await writeFile(join(cwd, ".redteam", "project.json"), JSON.stringify(config), { mode: 0o600 }); }
   const handlers = new Map<string, Function>();
   const commands = new Map<string, any>();
+  const tools = new Map<string, unknown>();
   const notifications: string[] = [];
   const entries: unknown[] = [];
   const api = {
     on: (name: string, handler: Function) => { handlers.set(name, handler); return () => handlers.delete(name); },
     registerCommand: (name: string, command: unknown) => commands.set(name, command),
     appendEntry: (name: string, data: unknown) => entries.push({ name, data }),
-    registerTool: (tool: { name: string; exposure: string }) => { assert(["rt_search", "rt_graph", "rt_job", "rt_team", "rt_campaign"].includes(tool.name)); assert.equal(tool.exposure, "direct"); },
+    registerTool: (tool: { name: string; exposure: string }) => { assert(["rt_search", "rt_graph", "rt_job", "rt_team"].includes(tool.name)); assert.equal(tool.exposure, "direct"); tools.set(tool.name, tool); },
     setActiveTools: () => assert.fail("Must not replace the tool set"),
     registerMcpServer: () => assert.fail("MCP belongs to Pi configuration"),
   };
@@ -35,7 +35,7 @@ async function fixture(configured = true) {
   const emit = (name: string, event: unknown = {}) => handlers.get(name)?.(event, ctx);
   const result = (id: string, output: string, overrides = {}) => ({ type: "tool_result", toolName: "bash", toolCallId: id, input: { command: "printf fixture" }, content: [{ type: "text", text: output }], details: undefined, structuredContent: { output, truncated: false, exit_code: 0, wall_time_seconds: 0 }, isError: false, ...overrides });
   const close = async () => { await emit("session_shutdown"); await rm(cwd, { recursive: true, force: true }); };
-  return { cwd, config, ctx, handlers, commands, notifications, entries, emit, result, close };
+  return { cwd, config, ctx, handlers, commands, tools, notifications, entries, emit, result, close };
 }
 
 test("no configuration is required and state is generated only when native tools run", async () => {
@@ -65,20 +65,31 @@ test("untrusted working directory is not loaded", async () => {
   } finally { await setup.close(); }
 });
 
-test("optional coverage notes return after native compaction without becoming task criteria", async () => {
+test("removed campaign ignores legacy data and clears stale context after native compaction", async () => {
   const setup = await fixture(false);
   try {
-    await setup.emit("session_start");
-    await campaignAction({ cwd: setup.cwd }, { action: "target", target: { id: "owned", targetRef: "owned", category: "binary", nextStep: "Reassess program semantics" } }, { id: "parent:owned" });
-    const first = { systemPromptOptions: { sections: {} as Record<string, string> } };
-    await setup.emit("before_agent_start", first);
-    assert.match(first.systemPromptOptions.sections.redteam_campaign!, /Optional workspace coverage notes/);
-    assert.match(first.systemPromptOptions.sections.redteam!, /cheap discriminating check/);
-    await setup.emit("session_compact");
-    const second = { systemPromptOptions: { sections: {} as Record<string, string> } };
-    await setup.emit("before_agent_start", second);
-    assert.match(second.systemPromptOptions.sections.redteam_campaign!, /Reassess program semantics/);
-    await assert.rejects(stat(join(setup.cwd, ".redteam/project.json")), { code: "ENOENT" });
+    const directory = join(setup.cwd, ".redteam");
+    await mkdir(directory);
+    const legacy = join(directory, "campaign.json");
+    const archive = join(directory, "campaign.archive.json");
+    const archiveData = '{"targets":[{"id":"old-owned"}]}';
+    await writeFile(archive, archiveData);
+    assert.deepEqual([...setup.tools.keys()].sort(), ["rt_graph", "rt_job", "rt_search", "rt_team"]);
+    for (const data of [archiveData, '{"broken":']) {
+      await writeFile(legacy, data);
+      await setup.emit("session_start");
+      for (const compact of [false, true]) {
+        if (compact) await setup.emit("session_compact");
+        const event = { systemPromptOptions: { sections: { redteam_campaign: "stale legacy coverage" } as Record<string, string> } };
+        await setup.emit("before_agent_start", event);
+        assert.equal(event.systemPromptOptions.sections.redteam_campaign, undefined);
+        assert.match(event.systemPromptOptions.sections.redteam!, /cheap discriminating check/);
+        assert(!JSON.stringify(event).includes("old-owned"));
+        assert.equal(await readFile(legacy, "utf8"), data);
+        assert.equal(await readFile(archive, "utf8"), archiveData);
+      }
+    }
+    for (const name of ["project.json", "branches.json", "findings", "team"]) await assert.rejects(stat(join(directory, name)), { code: "ENOENT" });
   } finally { await setup.close(); }
 });
 

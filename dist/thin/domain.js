@@ -5,8 +5,6 @@ import { candidatePaths, evidenceReferences, graphSnapshot, recordLink } from ".
 import { reasonGraph } from "./graph-reasoning.js";
 import { cancelJob, jobStatus, listJobs, readJobOutput, startJob } from "./jobs.js";
 import { loadProject } from "./project.js";
-import { z } from "redteam-zod";
-import { campaignAction, campaignToolInput } from "./campaign.js";
 import { GraphCapability, GraphOperationError } from "./graph-capability.js";
 const identifier = Type.String({ minLength: 1, maxLength: 80, pattern: "^[A-Za-z0-9_-]+$" });
 const text = Type.String({ minLength: 1, maxLength: 500 });
@@ -47,14 +45,6 @@ export function registerDomainTools(pi, graph = new GraphCapability(pi)) {
         const preview = truncateHead(text, { maxBytes: 64 * 1024, maxLines: 2000 });
         return { content: [{ type: "text", text: preview.content + (preview.truncated ? "\nResult text truncated. Full structured data is available through codemode; filter it before returning to the model." : "") }], details: data, structuredContent: data };
     };
-    pi.registerTool({
-        name: "rt_campaign", label: "Optional coverage notes", exposure: "direct", namespace, outputSchema,
-        description: "Optional workspace notes: target records an asset/category/blocker/possible next step; coverage records an observed surface with evidence; status reads paged notes. No configure or inventory completeness required. Suggestions are non-exhaustive, not a mandatory checklist or authorization. This tool never declares whole-task success, chooses branches or triggers continuation. Keep hypotheses, competing explanations in snapshot.notes and attempt feedback in rt_search. Simple work needs no coverage notes.",
-        executionMode: "sequential", parameters: Type.Unsafe(z.toJSONSchema(campaignToolInput, { io: "input" })),
-        async execute(_callId, params, signal, _update, ctx) {
-            return result(await campaignAction(await projectFor(ctx), params, { id: `parent:${ctx.sessionManager.getSessionId()}` }, signal));
-        },
-    });
     pi.registerTool({
         name: "rt_search", label: "Red-team search assistance", exposure: "direct", namespace, outputSchema,
         description: "For competing directions: upsert evidence-backed hypotheses, next for TDI/UCB recommendation, select(id,decisionId,goal) to declare the logical attempt, then native tools and feedback(id,attemptId,requestId,outcome,reference). Unknown evidence stays unscored. Intermediate TDI needs mode and justification. Interrupt before switching an unfinished attempt. Review references to reconsider related suspended branches. Simple commands need none of this. No automatic execution or verdict.",

@@ -11,12 +11,11 @@ import { readBoundedFile } from "../project.js";
 import { digest, rejectSymlinks, safePath } from "../../files.js";
 import { readTeam, validateWork, type WorkLease } from "./store.js";
 import type { TeamToolInput, WorkerConfig } from "./protocol.js";
-import { campaignAction, type CampaignInput } from "../campaign.js";
 
 export function workerDomainSchemas(): WorkerConfig["domainTools"] {
   const definitions: ToolDefinition[] = [];
   registerDomainTools({ registerTool: (tool: ToolDefinition) => { definitions.push(tool); } } as ExtensionAPI);
-  return definitions.map(tool => ({ name: tool.name as "rt_search" | "rt_graph" | "rt_job" | "rt_campaign", description: tool.name === "rt_graph" ? "Read the expert's bounded graph snapshot and run graph reasoning. Snapshot is not live Neo4j and may be stale. No writes or arbitrary Cypher." : tool.description, parameters: tool.name === "rt_graph" ? { type: "object", properties: { action: { enum: ["snapshot", "paths", "query"] }, query: { enum: ["next", "chains", "severity", "evidence", "chokepoints"] }, sourceId: { type: "string", maxLength: 500 }, targetId: { type: "string", maxLength: 500 }, maxAgeSeconds: { type: "integer", minimum: 1, maximum: 2592000 } }, required: ["action"], additionalProperties: false } : tool.parameters as Record<string, unknown> }));
+  return definitions.map(tool => ({ name: tool.name as "rt_search" | "rt_graph" | "rt_job", description: tool.name === "rt_graph" ? "Read the expert's bounded graph snapshot and run graph reasoning. Snapshot is not live Neo4j and may be stale. No writes or arbitrary Cypher." : tool.description, parameters: tool.name === "rt_graph" ? { type: "object", properties: { action: { enum: ["snapshot", "paths", "query"] }, query: { enum: ["next", "chains", "severity", "evidence", "chokepoints"] }, sourceId: { type: "string", maxLength: 500 }, targetId: { type: "string", maxLength: 500 }, maxAgeSeconds: { type: "integer", minimum: 1, maximum: 2592000 } }, required: ["action"], additionalProperties: false } : tool.parameters as Record<string, unknown> }));
 }
 
 const searchInput = z.object({ action: z.enum(["list", "upsert", "feedback", "recommend", "next", "select", "interrupt", "review"]), branch: branchInput.optional(), pivot: branchInput.optional(), mode: z.enum(["explore", "advance"]).optional(), justification: z.string().min(1).max(2000).optional(), id: z.string().regex(/^[A-Za-z0-9_-]{1,80}$/).optional(), outcome: z.enum(["success", "partial", "failure"]).optional(), note: z.string().max(2000).optional(), reference: z.string().min(1).max(500).optional(), requestId: z.string().uuid().optional(), attemptId: z.string().uuid().optional(), decisionId: z.string().uuid().optional(), goal: z.string().min(1).max(2000).optional(), references: z.array(z.string().min(1).max(500)).min(1).max(100).optional() }).strict();
@@ -33,10 +32,6 @@ export function workerDomainAdapter(project: DomainProject, execution: boolean) 
     async invoke(lease: WorkLease, toolCallId: string, input: Extract<TeamToolInput, { action: "domain" }>) {
       const task = await validateWork(project, lease);
       const params = JSON.parse(JSON.stringify(input.params));
-      if (input.tool === "rt_campaign") {
-        const scoped = { ...project, mutationGuard: async () => { await validateWork(project, lease); } };
-        return campaignAction(scoped, params as CampaignInput, { id: `worker:${lease.workerId}`, targetRef: task.targetRef });
-      }
       if (input.tool === "rt_search") {
         const parsed = searchInput.parse(params);
         const scoped = { ...project, searchStatePath: `team/search/${lease.runId}/${lease.workItemId}/branches.json`, mutationGuard: async () => { await validateWork(project, lease); } };

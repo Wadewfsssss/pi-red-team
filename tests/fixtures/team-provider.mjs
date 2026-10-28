@@ -18,25 +18,12 @@ export default function teamFixture(pi) {
       const current = [...context.messages].reverse().find(message => message.role === "user");
       const currentText = JSON.stringify(current);
       const native = currentText.includes("owned-native-execution:");
-      const campaign = currentText.includes("owned-campaign-action:");
       const supervised = currentText.includes("Authorized goal:");
       const cooperation = currentText.includes("team-cooperate:") || supervised;
       const waiting = currentText.includes("wait-until-aborted") && !summarizing;
       const names = context.messages.filter(message => message.role === "system").flatMap(message => message.toolsAdded ?? []).map(tool => tool.name);
-      if (names.some(name => (!native && ["bash", "edit", "write"].includes(name)) || (!cooperation && !native && !campaign && name === "rt_team") || name.startsWith("mcp__"))) throw new Error("Worker tool ceiling leaked");
+      if (names.some(name => (!native && ["bash", "edit", "write"].includes(name)) || (!cooperation && !native && name === "rt_team") || name.startsWith("mcp__"))) throw new Error("Worker tool ceiling leaked");
       let cooperativeContent;
-      if (campaign) {
-        const text = typeof current.content === "string" ? current.content : current.content.filter(entry => entry.type === "text").map(entry => entry.text).join("\n");
-        const seed = JSON.parse(text.slice(text.indexOf("owned-campaign-action:") + 22));
-        if (!names.includes("rt_campaign")) throw new Error("Campaign domain tool missing from actual child context");
-        const result = [...context.messages].reverse().find(message => message.role === "toolResult");
-        if (!result) cooperativeContent = [{ type: "toolCall", id: "campaign-claim", name: "rt_team", arguments: { action: "claim", workItemId: seed.claim } }];
-        else if (result.toolName === "rt_team") cooperativeContent = [{ type: "toolCall", id: "campaign-coverage", name: "rt_campaign", arguments: seed.params }];
-        else {
-          if (result.isError) throw new Error("Owned campaign tool failed in actual SDK");
-          cooperativeContent = [{ type: "text", text: "Owned campaign fixture finished" }];
-        }
-      }
       if (native) {
         const text = typeof current.content === "string" ? current.content : current.content.filter(entry => entry.type === "text").map(entry => entry.text).join("\n");
         const seed = JSON.parse(text.slice(text.indexOf("owned-native-execution:") + 23));

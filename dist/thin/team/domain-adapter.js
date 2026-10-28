@@ -9,7 +9,6 @@ import { domainPath } from "../state.js";
 import { readBoundedFile } from "../project.js";
 import { digest, rejectSymlinks, safePath } from "../../files.js";
 import { readTeam, validateWork } from "./store.js";
-import { campaignAction } from "../campaign.js";
 export function workerDomainSchemas() {
     const definitions = [];
     registerDomainTools({ registerTool: (tool) => { definitions.push(tool); } });
@@ -29,10 +28,6 @@ export function workerDomainAdapter(project, execution) {
         async invoke(lease, toolCallId, input) {
             const task = await validateWork(project, lease);
             const params = JSON.parse(JSON.stringify(input.params));
-            if (input.tool === "rt_campaign") {
-                const scoped = { ...project, mutationGuard: async () => { await validateWork(project, lease); } };
-                return campaignAction(scoped, params, { id: `worker:${lease.workerId}`, targetRef: task.targetRef });
-            }
             if (input.tool === "rt_search") {
                 const parsed = searchInput.parse(params);
                 const scoped = { ...project, searchStatePath: `team/search/${lease.runId}/${lease.workItemId}/branches.json`, mutationGuard: async () => { await validateWork(project, lease); } };

@@ -39,7 +39,6 @@ export declare const workerConfigSchema: z.ZodObject<{
     domainTools: z.ZodDefault<z.ZodArray<z.ZodObject<{
         name: z.ZodEnum<{
             rt_graph: "rt_graph";
-            rt_campaign: "rt_campaign";
             rt_search: "rt_search";
             rt_job: "rt_job";
         }>;
@@ -95,7 +94,6 @@ export declare const teamToolInputSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
     action: z.ZodLiteral<"domain">;
     tool: z.ZodEnum<{
         rt_graph: "rt_graph";
-        rt_campaign: "rt_campaign";
         rt_search: "rt_search";
         rt_job: "rt_job";
     }>;
@@ -152,7 +150,6 @@ export declare const teamToolRequestSchema: z.ZodObject<{
         action: z.ZodLiteral<"domain">;
         tool: z.ZodEnum<{
             rt_graph: "rt_graph";
-            rt_campaign: "rt_campaign";
             rt_search: "rt_search";
             rt_job: "rt_job";
         }>;
@@ -201,7 +198,6 @@ export declare const workerCommandSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
         domainTools: z.ZodDefault<z.ZodArray<z.ZodObject<{
             name: z.ZodEnum<{
                 rt_graph: "rt_graph";
-                rt_campaign: "rt_campaign";
                 rt_search: "rt_search";
                 rt_job: "rt_job";
             }>;

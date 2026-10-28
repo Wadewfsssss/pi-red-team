@@ -137,7 +137,7 @@ test("domain tools work without project configuration and retain native trust", 
     const tools = new Map<string, any>();
     registerDomainTools({ registerTool: (tool: any) => tools.set(tool.name, tool) } as unknown as ExtensionAPI);
     const ctx = { cwd: setup.project.cwd, isProjectTrusted: () => true, getContextUsage: () => ({ percent: null }) };
-    assert.equal(tools.size, 4);
+    assert.deepEqual([...tools.keys()].sort(), ["rt_graph", "rt_job", "rt_search"]);
     await tools.get("rt_search").execute("call", { action: "upsert", branch: branch("root") }, undefined, undefined, ctx);
     const recommendation = await tools.get("rt_search").execute("call", { action: "recommend" }, undefined, undefined, ctx);
     assert.equal(recommendation.structuredContent.candidates[0].tdi, null);

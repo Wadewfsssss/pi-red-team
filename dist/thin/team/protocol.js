@@ -9,7 +9,7 @@ export const workerConfigSchema = z.object({
     teamRunId: z.string().uuid().optional(),
     execution: z.boolean().default(false),
     nativeTools: z.array(nativeToolSchema).max(7).optional(),
-    domainTools: z.array(z.object({ name: z.enum(["rt_search", "rt_graph", "rt_job", "rt_campaign"]), description: z.string().max(4000), parameters: z.record(z.string(), z.unknown()) }).strict()).max(4).default([]),
+    domainTools: z.array(z.object({ name: z.enum(["rt_search", "rt_graph", "rt_job"]), description: z.string().max(4000), parameters: z.record(z.string(), z.unknown()) }).strict()).max(3).default([]),
     resumePath: absolute.optional(), parentTimeoutMs: z.number().int().min(3000).max(60000).default(15000),
 }).strict();
 export const teamToolInputSchema = z.discriminatedUnion("action", [
@@ -24,7 +24,7 @@ export const teamToolInputSchema = z.discriminatedUnion("action", [
     z.object({ action: z.literal("release") }).strict(),
     z.object({ action: z.literal("validate") }).strict(),
     z.object({ action: z.literal("offer"), title: z.string().min(1).max(500), targetRef: z.string().min(1).max(500), operation: z.string().min(1).max(500), preconditionHash: z.string().regex(/^[a-f0-9]{64}$/) }).strict(),
-    z.object({ action: z.literal("domain"), tool: z.enum(["rt_search", "rt_graph", "rt_job", "rt_campaign"]), params: z.record(z.string(), z.unknown()).refine(value => Buffer.byteLength(JSON.stringify(value)) <= 65536, "Domain material exceeds 64 KiB"), contextPercent: z.number().min(0).max(100).optional() }).strict(),
+    z.object({ action: z.literal("domain"), tool: z.enum(["rt_search", "rt_graph", "rt_job"]), params: z.record(z.string(), z.unknown()).refine(value => Buffer.byteLength(JSON.stringify(value)) <= 65536, "Domain material exceeds 64 KiB"), contextPercent: z.number().min(0).max(100).optional() }).strict(),
 ]);
 export const teamToolRequestSchema = z.object({ kind: z.literal("tool_request"), requestId: z.string().uuid(), toolCallId: z.string().min(1).max(500), input: teamToolInputSchema }).strict();
 export const teamToolResultSchema = z.object({ action: z.literal("tool_result"), requestId: z.string().uuid(), text: z.string().max(32768), failed: z.boolean() }).strict();

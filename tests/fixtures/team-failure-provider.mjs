@@ -25,7 +25,7 @@ export default function failureFixture(pi) {
       const workItemId = /owned-evidence-error:([a-f0-9-]+)/.exec(text)?.[1];
       const content = native && !toolResult ? [{ type: "toolCall", id: "owned-evidence-claim", name: "rt_team", arguments: { action: "claim", workItemId } }] : native && toolResult.toolName === "rt_team" ? [{ type: "toolCall", id: "owned-evidence-command", name: "bash", arguments: { command: "printf owned-native-result" } }] : aborted ? [] : [{ type: "text", text: failed ? "Unverified partial text" : native ? JSON.stringify(toolResult) : "Owned successful reply" }];
       const stopReason = failed ? "error" : aborted ? "aborted" : length ? "length" : content[0]?.type === "toolCall" ? "toolUse" : "stop";
-      const message = { role: "assistant", content, api: model.api, provider: model.provider, model: model.id, usage: { input: 1, output: 1, cacheRead: 0, cacheWrite: 0, totalTokens: 2, cost: { ...cost, total: 0 } }, stopReason, timestamp: Date.now(), ...(failed ? { errorMessage: transient ? "503 owned temporary server error" : '400 Invalid schema for function rt_campaign' } : {}) };
+      const message = { role: "assistant", content, api: model.api, provider: model.provider, model: model.id, usage: { input: 1, output: 1, cacheRead: 0, cacheWrite: 0, totalTokens: 2, cost: { ...cost, total: 0 } }, stopReason, timestamp: Date.now(), ...(failed ? { errorMessage: transient ? "503 owned temporary server error" : '400 Invalid schema for function rt_search' } : {}) };
       queueMicrotask(() => {
         stream.push({ type: "start", partial: message });
         stream.push(stopReason === "error" || stopReason === "aborted" ? { type: "error", reason: stopReason, error: message } : { type: "done", reason: stopReason, message });

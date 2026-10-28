@@ -244,36 +244,6 @@ export declare class TeamSupervisor {
                 reason: string;
             } | undefined;
         } | undefined;
-        coverageNotes: {
-            configured: boolean;
-            registeredTargets: number;
-            targets: never[];
-            advisory: boolean;
-            goalCompletionEvaluated: boolean;
-            authorizationGranted: boolean;
-            truncated?: undefined;
-            integrityChecksTruncated?: undefined;
-        } | {
-            configured: boolean;
-            registeredTargets: number;
-            targets: {
-                id: string;
-                targetRef: string;
-                suggestedUnexaminedSurfaces: ("Entry points and input handling" | "Authentication and session behavior" | "Authorization and object boundaries" | "Application configuration and exposed functionality" | "Identities and trust boundaries" | "Effective permissions and prerequisites" | "Resource access relationships" | "Credential and session provenance" | "Reachability and service inventory" | "Service configuration and access boundaries" | "Dependencies between systems" | "Evidence-backed path prerequisites" | "Program inputs and execution model" | "Data flow and validation constraints" | "Observed runtime behavior" | "Competing interpretations of program semantics" | "Inputs and outputs" | "Trust boundaries" | "Known prerequisites" | "Alternative explanations")[];
-                blocker: string;
-                nextStep: string;
-            }[];
-            truncated: boolean;
-            advisory: boolean;
-            goalCompletionEvaluated: boolean;
-            authorizationGranted: boolean;
-            integrityChecksTruncated: boolean;
-        } | {
-            available: boolean;
-            advisory: boolean;
-            goalCompletionEvaluated: boolean;
-            authorizationGranted: boolean;
-        };
         goalCompletionNotImplied: boolean;
         load: {
             capacity: number | undefined;
@@ -308,7 +278,6 @@ export declare class TeamSupervisor {
         actualTokenCost: string;
         configurationRequired: boolean;
     }>;
-    private coverageNotes;
     private loadCheckpoint;
     consumeHandoff(runId: string, batch: string, model: {
         provider: string;
