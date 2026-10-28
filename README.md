@@ -2,7 +2,13 @@
 
 一个薄的 Pi 红队扩展：Pi 负责模型、原生工具、会话与压缩；插件补充证据、搜索、图辅助、可选协作和长作业监督。不围绕 Pi 再造 Agent 平台。
 
-当前版本：**1.0.0-rc.12**，测试候选。仓库先以私有形式维护，尚未指定对外开源许可证，也未发布公共 npm 包。
+当前版本：**1.0.0-rc.13**，测试候选。仓库先以私有形式维护，尚未指定对外开源许可证，也未发布公共 npm 包。
+
+## rc.13 修复
+
+修复主会话与 Worker 的工具 schema 兼容性、失败/取消误报成功、旧回答复用、诊断丢失、证据保存异常及检查点错误处理。审查记录见 `docs/reliability-audit-2026-10-28.md`。
+
+升级前先停止并核验旧 Worker 和长作业、退出 Pi，再安装新版本；不要混用旧 Worker 与新父进程。没有更新 Kali 镜像，仍需真实模型网关和长时间验收。
 
 ## 安装
 
@@ -13,13 +19,13 @@
 私有 Git 仓库需要该环境已具备 GitHub 读取权限；不要把访问令牌打进镜像。固定版本安装：
 
 ```sh
-pi install git:github.com/Wadewfsssss/pi-red-team@v1.0.0-rc.12
+pi install git:github.com/Wadewfsssss/pi-red-team@v1.0.0-rc.13
 ```
 
 默认写入当前环境的个人 Pi 配置。若只希望登记到当前项目，可使用原生本地安装选项：
 
 ```sh
-pi install --local git:github.com/Wadewfsssss/pi-red-team@v1.0.0-rc.12
+pi install --local git:github.com/Wadewfsssss/pi-red-team@v1.0.0-rc.13
 ```
 
 安装后退出并重新启动 Pi。在授权工作目录中直接描述任务；不需要 `/rt open`、`.redteam/project.json` 或另一套任务系统。

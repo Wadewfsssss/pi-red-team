@@ -33,6 +33,37 @@ export declare const campaignInput: z.ZodDiscriminatedUnion<[z.ZodObject<{
     evidenceRefs: z.ZodDefault<z.ZodArray<z.ZodString>>;
 }, z.core.$strict>], "action">;
 export type CampaignInput = z.input<typeof campaignInput>;
+export declare const campaignToolInput: z.ZodObject<{
+    action: z.ZodEnum<{
+        status: "status";
+        target: "target";
+        coverage: "coverage";
+    }>;
+    targetId: z.ZodOptional<z.ZodString>;
+    surface: z.ZodOptional<z.ZodString>;
+    status: z.ZodOptional<z.ZodEnum<{
+        unexamined: "unexamined";
+        examined: "examined";
+        blocked: "blocked";
+        "not-applicable": "not-applicable";
+    }>>;
+    observation: z.ZodOptional<z.ZodString>;
+    evidenceRefs: z.ZodOptional<z.ZodDefault<z.ZodArray<z.ZodString>>>;
+    target: z.ZodOptional<z.ZodObject<{
+        id: z.ZodString;
+        targetRef: z.ZodString;
+        category: z.ZodEnum<{
+            binary: "binary";
+            network: "network";
+            web: "web";
+            "identity-cloud": "identity-cloud";
+            other: "other";
+        }>;
+        blocker: z.ZodOptional<z.ZodString>;
+        nextStep: z.ZodOptional<z.ZodString>;
+    }, z.core.$strict>>;
+    after: z.ZodOptional<z.ZodOptional<z.ZodString>>;
+}, z.core.$strict>;
 export declare const testingProfiles: {
     readonly web: readonly ["Entry points and input handling", "Authentication and session behavior", "Authorization and object boundaries", "Application configuration and exposed functionality"];
     readonly "identity-cloud": readonly ["Identities and trust boundaries", "Effective permissions and prerequisites", "Resource access relationships", "Credential and session provenance"];

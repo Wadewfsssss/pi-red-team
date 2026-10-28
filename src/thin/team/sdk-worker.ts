@@ -102,7 +102,7 @@ export class SdkWorker {
       const pending = this.pending.get(reply.requestId);
       if (!pending) return;
       clearTimeout(pending.timer); this.pending.delete(reply.requestId);
-      if (reply.kind === "error") pending.reject(new Error(`SDK worker ${reply.code}; no command replayed`));
+      if (reply.kind === "error") pending.reject(new Error(`SDK worker ${reply.code}${reply.diagnostic ? `: ${reply.diagnostic}` : ""}; no command replayed`));
       else if (reply.view.workerId !== this.config.workerId || reply.view.provider !== this.config.provider || reply.view.model !== this.config.model) {
         pending.reject(new Error("Worker identity or selected model changed")); void this.stop().catch(() => {});
       } else { this.current = reply.view; pending.resolve(reply); }

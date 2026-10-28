@@ -46,6 +46,6 @@ export const workerViewSchema = z.object({
 export const workerReplySchema = z.discriminatedUnion("kind", [
     z.object({ kind: z.literal("ready"), requestId: z.string().uuid(), view: workerViewSchema }).strict(),
     z.object({ kind: z.literal("result"), requestId: z.string().uuid(), view: workerViewSchema, text: z.string().max(32768), truncated: z.boolean() }).strict(),
-    z.object({ kind: z.literal("error"), requestId: z.string().uuid(), code: z.enum(["invalid", "unavailable", "busy", "failed", "stopping"]) }).strict(),
+    z.object({ kind: z.literal("error"), requestId: z.string().uuid(), code: z.enum(["invalid", "unavailable", "busy", "failed", "stopping"]), diagnostic: z.string().max(2000).optional() }).strict(),
     z.object({ kind: z.literal("activity"), workerId: z.string().uuid(), event: z.enum(["started", "settled", "tool", "compaction", "usage", "provider-retry"]), tool: z.string().max(200).optional(), usage: z.object({ input: z.number().finite().min(0), output: z.number().finite().min(0), cacheRead: z.number().finite().min(0), cacheWrite: z.number().finite().min(0), cost: z.number().finite().min(0) }).strict().optional(), rateLimited: z.boolean().optional(), retryDelayMs: z.number().int().min(0).max(86400000).optional() }).strict(),
 ]);

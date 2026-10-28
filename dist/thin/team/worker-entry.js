@@ -22,6 +22,8 @@ export function runWorker() {
     let lastParent = Date.now();
     let watchdog;
     let writer;
+    let lastResponse;
+    let promptCancelled = false;
     const pendingTools = new Map();
     const invoke = (toolCallId, input, signal) => {
         if (closing || !process.connected)
@@ -181,7 +183,14 @@ export function runWorker() {
                 feedback.selectBranch({ selected: attempt?.branchId ? { id: attempt.branchId } : null });
                 const structured = event.structuredContent;
                 const output = typeof structured?.output === "string" ? structured.output : event.content.filter(part => part.type === "text").map(part => part.text).join("\n");
-                const evidence = await writer.save({ toolCallId: event.toolCallId, sessionId: ctx.sessionManager.getSessionId(), leafId: ctx.sessionManager.getLeafId(), command: String(event.input.command ?? ""), output, fullOutputPath: event.details?.fullOutputPath, truncated: structured?.truncated === true || !!event.details?.truncation, isError: event.isError, attemptId: attempt?.attemptId, branchId: attempt?.branchId, parentToolCallId: event.parentToolCallId });
+                let evidence;
+                try {
+                    evidence = await writer.save({ toolCallId: event.toolCallId, sessionId: ctx.sessionManager.getSessionId(), leafId: ctx.sessionManager.getLeafId(), command: String(event.input.command ?? ""), output, fullOutputPath: event.details?.fullOutputPath, truncated: structured?.truncated === true || !!event.details?.truncation, isError: event.isError, attemptId: attempt?.attemptId, branchId: attempt?.branchId, parentToolCallId: event.parentToolCallId });
+                }
+                catch {
+                    content.push({ type: "text", text: "Red-team evidence save failed; the native execution result is retained, but output persistence is not verified. Do not claim persisted evidence or replay the command merely to save its output." });
+                    return { content, structuredContent: event.structuredContent };
+                }
                 const observed = feedback.observe({ command: String(event.input.command ?? ""), output, isError: event.isError, toolCallId: event.toolCallId, evidenceRef: evidence.outputPath });
                 try {
                     pi.appendEntry("redteam-execution", observed.observation);
@@ -213,7 +222,7 @@ export function runWorker() {
             resourceLoader: loader, settingsManager: settings, sessionManager: manager, tools: allowedTools, excludeTools: ["mcp__*"],
         });
         session = created.session;
-        await session.bindExtensions({ mode: "rpc", onError: () => { void shutdown(); }, shutdownHandler: async () => { void shutdown(); } });
+        await session.bindExtensions({ mode: "rpc", onError: error => { console.error(`Worker extension ${error.event} failed: ${error.error.slice(0, 2000)}`); void shutdown(); }, shutdownHandler: async () => { void shutdown(); } });
         if (session.model?.contextWindow !== expectedLimits.contextWindow || session.model.maxTokens !== expectedLimits.maxTokens)
             throw new Error("Provider registration changed configured model limits");
         if (!bound || closing || session.model?.provider !== input.provider || session.model.id !== input.model || session.getActiveToolNames().some(name => !allowedTools.includes(name)))
@@ -225,13 +234,17 @@ export function runWorker() {
                 return;
             if (event.type === "agent_start")
                 reply({ kind: "activity", workerId: config.workerId, event: "started" });
-            if (event.type === "agent_settled")
+            if (event.type === "agent_settled") {
+                if (event.aborted)
+                    promptCancelled = true;
                 reply({ kind: "activity", workerId: config.workerId, event: "settled" });
+            }
             if (event.type === "tool_execution_start")
                 reply({ kind: "activity", workerId: config.workerId, event: "tool", tool: event.toolName.slice(0, 200) });
             if (event.type === "compaction_start")
                 reply({ kind: "activity", workerId: config.workerId, event: "compaction" });
             if (event.type === "message_end" && event.message.role === "assistant") {
+                lastResponse = { stopReason: event.message.stopReason, errorMessage: event.message.errorMessage, text: event.message.content.filter(part => part.type === "text").map(part => part.text).join("").trim() };
                 const usage = event.message.usage;
                 if ([usage.input, usage.output, usage.cacheRead, usage.cacheWrite, usage.cost.total].every(value => Number.isFinite(value) && value >= 0))
                     reply({ kind: "activity", workerId: config.workerId, event: "usage", usage: { input: usage.input, output: usage.output, cacheRead: usage.cacheRead, cacheWrite: usage.cacheWrite, cost: usage.cost.total } });
@@ -271,8 +284,8 @@ export function runWorker() {
                     await initialize(command.config);
                     reply({ kind: "ready", requestId: command.requestId, view: view() });
                 }
-                catch {
-                    reply({ kind: "error", requestId: command.requestId, code: "unavailable" });
+                catch (error) {
+                    reply({ kind: "error", requestId: command.requestId, code: "unavailable", diagnostic: (error instanceof Error ? error.message : String(error)).slice(0, 2000) });
                     await shutdown();
                 }
                 return;
@@ -286,6 +299,7 @@ export function runWorker() {
                 return;
             }
             if (command.action === "abort") {
+                promptCancelled = true;
                 await session.abort();
                 reply({ kind: "result", requestId: command.requestId, view: view(), text: "Aborted; no action replayed", truncated: false });
                 return;
@@ -300,18 +314,29 @@ export function runWorker() {
             }
             busy = true;
             try {
-                if (command.action === "compact")
+                let text;
+                if (command.action === "compact") {
                     await session.compact(command.instructions);
-                else
+                    text = session.getLastAssistantText() ?? "";
+                }
+                else {
+                    lastResponse = undefined;
+                    promptCancelled = false;
                     await session.prompt(command.text, { expandPromptTemplates: false });
-                const text = session.getLastAssistantText() ?? "";
+                    if (closing || promptCancelled)
+                        throw new Error("Worker prompt aborted or cancelled; execution state must be inspected before retrying");
+                    const response = lastResponse;
+                    if (response?.stopReason === "error" || response?.stopReason === "aborted" || response?.stopReason === "length")
+                        throw new Error(`Model response ${response.stopReason}${response.errorMessage ? `: ${response.errorMessage}` : ""}; partial text is not a successful result`);
+                    text = response?.text ?? "";
+                }
                 const bytes = Buffer.from(text);
                 busy = false;
                 reply({ kind: "result", requestId: command.requestId, view: view(), text: bytes.subarray(0, 16384).toString("utf8"), truncated: bytes.length > 16384 });
             }
-            catch {
+            catch (error) {
                 busy = false;
-                reply({ kind: "error", requestId: command.requestId, code: closing ? "stopping" : "failed" });
+                reply({ kind: "error", requestId: command.requestId, code: closing ? "stopping" : "failed", diagnostic: (error instanceof Error ? error.message : String(error)).slice(0, 2000) });
             }
         })().catch(() => { void shutdown(); });
     });

@@ -302,6 +302,7 @@ export declare const workerReplySchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
         stopping: "stopping";
         busy: "busy";
     }>;
+    diagnostic: z.ZodOptional<z.ZodString>;
 }, z.core.$strict>, z.ZodObject<{
     kind: z.ZodLiteral<"activity">;
     workerId: z.ZodString;

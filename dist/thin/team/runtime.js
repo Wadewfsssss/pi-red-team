@@ -250,7 +250,14 @@ export class TeamSupervisor {
             worker.phase = "idle";
             await this.save();
             const owned = instance;
-            this.loops.push(this.loop(owned, worker).catch(async () => { await this.workerAttention(worker, owned, "Worker failed; uncertain work is not replayed"); }));
+            this.loops.push(this.loop(owned, worker).catch(async (error) => {
+                try {
+                    await this.workerAttention(worker, owned, `Worker failed: ${(error instanceof Error ? error.message : String(error)).slice(0, 2000)}; uncertain work is not replayed`);
+                }
+                catch (cleanupError) {
+                    this.requestStop(`Worker failure cleanup or checkpoint could not be verified: ${(cleanupError instanceof Error ? cleanupError.message : String(cleanupError)).slice(0, 1000)}`);
+                }
+            }));
         }
         catch (error) {
             if (instance) {
@@ -258,7 +265,7 @@ export class TeamSupervisor {
                 this.workers = this.workers.filter(entry => entry !== instance);
             }
             worker.phase = "attention";
-            worker.reason = "Initialization failed; no automatic retry";
+            worker.reason = `Initialization failed: ${(error instanceof Error ? error.message : String(error)).slice(0, 1000)}; no automatic retry`;
             await this.save();
             throw error;
         }
@@ -583,6 +590,12 @@ export class TeamSupervisor {
             this.workers = [];
         try {
             await this.save();
+        }
+        catch (error) {
+            this.checkpoint.phase = "attention";
+            this.checkpoint.runtimeStopVerified = false;
+            this.checkpoint.reason = `Shutdown checkpoint could not be persisted: ${(error instanceof Error ? error.message : String(error)).slice(0, 1000)}; manual inspection required`;
+            throw error;
         }
         finally {
             await this.releaseOwner?.();

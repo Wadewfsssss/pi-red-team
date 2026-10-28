@@ -6,16 +6,15 @@ export function registerWorkerTeamTool(pi, config, Type, invoke) {
     pi.registerTool({
         name: "rt_team", label: "Local worker cooperation", exposure: "direct", executionMode: "sequential",
         description: "Read peer summaries, choose and atomically claim one candidate, publish evidence-backed observations or results, and complete or release your own claim. When candidatesTruncated is true, use nextCandidateAfter as candidateAfter to inspect later candidates; after a claim conflict choose another angle or page. Peers choose independently. This worker cannot start, stop or enlarge a team. Reading is not acknowledgement; records are not verified findings.",
-        parameters: Type.Union([
-            Type.Object({ action: Type.Literal("read"), after: Type.Optional(Type.Integer({ minimum: 0 })), candidateAfter: Type.Optional(Type.String({ format: "uuid" })) }),
-            Type.Object({ action: Type.Literal("unfold"), recordId: Type.String({ pattern: "^[a-f0-9]{64}$" }) }),
-            Type.Object({ action: Type.Literal("request_graph") }),
-            Type.Object({ action: Type.Literal("claim"), workItemId: Type.String({ format: "uuid" }) }),
-            Type.Object({ action: Type.Literal("publish"), kind: Type.Union([Type.Literal("OBSERVED"), Type.Literal("HYPOTHESIS"), Type.Literal("FAIL"), Type.Literal("RESULT")]), summary: Type.String({ minLength: 1, maxLength: 512 }), preconditionHash: Type.String({ pattern: "^[a-f0-9]{64}$" }), evidenceRefs: Type.Array(Type.String({ minLength: 1, maxLength: 500 }), { maxItems: 20 }) }),
-            Type.Object({ action: Type.Literal("complete"), recordId: Type.String({ pattern: "^[a-f0-9]{64}$" }) }),
-            Type.Object({ action: Type.Literal("release") }),
-            Type.Object({ action: Type.Literal("offer"), title: Type.String({ minLength: 1, maxLength: 500 }), targetRef: Type.String({ minLength: 1, maxLength: 500 }), operation: Type.String({ minLength: 1, maxLength: 500 }), preconditionHash: Type.String({ pattern: "^[a-f0-9]{64}$" }) }),
-        ]),
+        parameters: Type.Object({
+            action: Type.Union(["read", "unfold", "request_graph", "claim", "publish", "complete", "release", "offer"].map(action => Type.Literal(action))),
+            after: Type.Optional(Type.Integer({ minimum: 0 })), candidateAfter: Type.Optional(Type.String({ format: "uuid" })),
+            recordId: Type.Optional(Type.String({ pattern: "^[a-f0-9]{64}$" })), workItemId: Type.Optional(Type.String({ format: "uuid" })),
+            kind: Type.Optional(Type.Union([Type.Literal("OBSERVED"), Type.Literal("HYPOTHESIS"), Type.Literal("FAIL"), Type.Literal("RESULT")])),
+            summary: Type.Optional(Type.String({ minLength: 1, maxLength: 512 })), preconditionHash: Type.Optional(Type.String({ pattern: "^[a-f0-9]{64}$" })),
+            evidenceRefs: Type.Optional(Type.Array(Type.String({ minLength: 1, maxLength: 500 }), { maxItems: 20 })),
+            title: Type.Optional(Type.String({ minLength: 1, maxLength: 500 })), targetRef: Type.Optional(Type.String({ minLength: 1, maxLength: 500 })), operation: Type.Optional(Type.String({ minLength: 1, maxLength: 500 })),
+        }, { additionalProperties: false }),
         async execute(toolCallId, input, signal) {
             signal?.throwIfAborted();
             const text = await invoke(toolCallId, teamToolInputSchema.parse(input), signal);

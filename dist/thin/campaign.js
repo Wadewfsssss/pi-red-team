@@ -16,6 +16,12 @@ export const campaignInput = z.discriminatedUnion("action", [
     z.object({ action: z.literal("target"), target: target.omit({ coverage: true }).partial({ blocker: true, nextStep: true }) }).strict(),
     z.object({ action: z.literal("coverage"), targetId: identifier, surface: text, status: coverage.shape.status, observation: text, evidenceRefs: z.array(z.string().min(1).max(500)).max(20).default([]) }).strict(),
 ]);
+export const campaignToolInput = z.object({
+    ...campaignInput.options[0].partial().shape,
+    ...campaignInput.options[1].partial().shape,
+    ...campaignInput.options[2].partial().shape,
+    action: z.enum(["status", "target", "coverage"]),
+}).strict();
 export const testingProfiles = {
     web: ["Entry points and input handling", "Authentication and session behavior", "Authorization and object boundaries", "Application configuration and exposed functionality"],
     "identity-cloud": ["Identities and trust boundaries", "Effective permissions and prerequisites", "Resource access relationships", "Credential and session provenance"],

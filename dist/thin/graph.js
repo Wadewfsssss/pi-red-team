@@ -29,6 +29,8 @@ export async function nativeCypher(ctx, server, write, query, signal) {
         const outcome = await ctx.executeTool(binding.tool, { query }, { signal });
         if (outcome.isError)
             throw new GraphOperationError("Neo4j MCP query failed; graph persistence is not verified", { status: "error", reason: "query_failed", server, executed: true, persistence: write ? "unknown" : "not_applicable", diagnostic: outcome.result });
+        if (!outcome.result || !Array.isArray(outcome.result.content))
+            throw new GraphOperationError("Neo4j MCP returned an invalid result envelope", { status: "error", reason: "invalid_response", server, executed: true, persistence: write ? "unknown" : "not_applicable" });
         return outcome.result;
     }
     catch (error) {
@@ -101,9 +103,12 @@ RETURN link.id AS id, source.id AS source, target.id AS target, link.relation AS
         }
         if (!Array.isArray(parsed))
             continue;
-        const links = z.array(linkSchema).max(256).parse(parsed);
+        const validated = z.array(linkSchema).max(256).safeParse(parsed);
+        if (!validated.success)
+            throw new GraphOperationError("Neo4j snapshot rows are invalid or exceed the bounded snapshot limit", { status: "error", reason: "invalid_response", server, executed: true, persistence: "not_applicable", diagnostic: "Snapshot schema or 256-row limit violated; inspect the graph before retrying" });
+        const links = validated.data;
         if (new Set(links.map(link => link.id)).size !== links.length)
-            throw new Error("Duplicate graph relationship IDs; repair graph before planning");
+            throw new GraphOperationError("Duplicate graph relationship IDs; repair graph before planning", { status: "error", reason: "invalid_response", server, executed: true, persistence: "not_applicable", diagnostic: "Duplicate relationship IDs" });
         return Promise.all(links.map(async (link) => {
             let evidenceVerified = false;
             try {
@@ -114,7 +119,7 @@ RETURN link.id AS id, source.id AS source, target.id AS target, link.relation AS
             return { ...link, evidenceVerified };
         }));
     }
-    throw new Error("Neo4j returned an unsupported snapshot format");
+    throw new GraphOperationError("Neo4j returned an unsupported snapshot format", { status: "error", reason: "invalid_response", server, executed: true, persistence: "not_applicable" });
 }
 export function candidatePaths(links, source, target, now = Date.now(), maxAgeSeconds = 86400, maxDepth = 8) {
     z.array(linkSchema).max(256).parse(links);

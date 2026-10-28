@@ -7,7 +7,7 @@ import { cancelJob, jobStatus, listJobs, readJobOutput, startJob } from "./jobs.
 import { loadProject } from "./project.js";
 import type { DomainProject } from "./state.js";
 import { z } from "redteam-zod";
-import { campaignAction, campaignInput, type CampaignInput } from "./campaign.js";
+import { campaignAction, campaignToolInput, type CampaignInput } from "./campaign.js";
 import { GraphCapability, GraphOperationError } from "./graph-capability.js";
 
 const identifier = Type.String({ minLength: 1, maxLength: 80, pattern: "^[A-Za-z0-9_-]+$" });
@@ -50,7 +50,7 @@ export function registerDomainTools(pi: ExtensionAPI, graph = new GraphCapabilit
   pi.registerTool({
     name: "rt_campaign", label: "Optional coverage notes", exposure: "direct", namespace, outputSchema,
     description: "Optional workspace notes: target records an asset/category/blocker/possible next step; coverage records an observed surface with evidence; status reads paged notes. No configure or inventory completeness required. Suggestions are non-exhaustive, not a mandatory checklist or authorization. This tool never declares whole-task success, chooses branches or triggers continuation. Keep hypotheses, competing explanations in snapshot.notes and attempt feedback in rt_search. Simple work needs no coverage notes.",
-    executionMode: "sequential", parameters: Type.Unsafe(z.toJSONSchema(campaignInput, { io: "input" })),
+    executionMode: "sequential", parameters: Type.Unsafe(z.toJSONSchema(campaignToolInput, { io: "input" })),
     async execute(_callId, params, signal, _update, ctx) {
       return result(await campaignAction(await projectFor(ctx), params as CampaignInput, { id: `parent:${ctx.sessionManager.getSessionId()}` }, signal));
     },
