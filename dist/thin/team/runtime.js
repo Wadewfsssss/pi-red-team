@@ -8,13 +8,13 @@ import { readBoundedFile } from "../project.js";
 import { cancelJob, listJobs, listOwnedJobs } from "../jobs.js";
 import { admitWorker, availableWork, createTeam, fenceWorker, finishTeam, offerSchema, offerWork, readTeam, resumeTeam, setJobWait } from "./store.js";
 import { SdkWorker } from "./sdk-worker.js";
-import { workerConfigSchema } from "./protocol.js";
+import { nativeToolSchema, workerConfigSchema } from "./protocol.js";
 import { workerDomainAdapter, workerDomainSchemas } from "./domain-adapter.js";
 import { ExecutionSlots, resolveTeamLimits, teamLimitsSchema } from "./limits.js";
 import { onTeamChange, waitForTeamChange } from "./events.js";
 import { campaignSummary } from "../campaign.js";
 export const startTeamSchema = z.object({ goal: z.string().min(1).max(4000), scope: z.string().min(1).max(4000), candidates: z.array(offerSchema).min(1).max(128), workerCount: z.number().int().min(1).max(64).optional(), limits: teamLimitsSchema.optional(), windowSeconds: z.number().int().min(1).max(86400).default(3600), maxRounds: z.number().int().min(1).max(20).default(20), execution: z.boolean().default(false), autoContinue: z.boolean().default(false), maxParentTurns: z.number().int().min(1).max(20).default(8) }).strict().transform(input => ({ ...input, limits: resolveTeamLimits(input.limits, input.workerCount) }));
-const checkpointSchema = z.object({ version: z.union([z.literal(1), z.literal(2)]), runId: z.string().uuid(), parentSession: z.string(), scope: z.string(), provider: z.string(), model: z.string(), execution: z.boolean(), maxRounds: z.number().int(), autoContinue: z.boolean().default(false), maxParentTurns: z.number().int().min(1).max(20).default(8), parentTurns: z.number().int().nonnegative().default(0), lastBatch: z.string().nullable().default(null), deliveredBatch: z.string().nullable().default(null), limits: teamLimitsSchema.optional(), workers: z.array(z.object({ workerId: z.string().uuid(), sessionPath: z.string().optional(), rounds: z.number().int(), phase: z.string(), reason: z.string().optional(), noProgress: z.number().int().min(0).optional(), reassessments: z.number().int().min(0).max(1).optional() }).strict()).max(64), phase: z.enum(["starting", "running", "paused", "stopped", "attention"]), reason: z.string(), runtimeStopVerified: z.boolean(), workerStopsVerified: z.boolean().optional() }).strict();
+const checkpointSchema = z.object({ version: z.union([z.literal(1), z.literal(2)]), runId: z.string().uuid(), parentSession: z.string(), scope: z.string(), provider: z.string(), model: z.string(), execution: z.boolean(), nativeTools: z.array(nativeToolSchema).max(7).optional(), taskKey: z.string().regex(/^[a-f0-9]{64}$/).optional(), maxRounds: z.number().int(), autoContinue: z.boolean().default(false), maxParentTurns: z.number().int().min(1).max(20).default(8), parentTurns: z.number().int().nonnegative().default(0), lastBatch: z.string().nullable().default(null), deliveredBatch: z.string().nullable().default(null), limits: teamLimitsSchema.optional(), workers: z.array(z.object({ workerId: z.string().uuid(), sessionPath: z.string().optional(), rounds: z.number().int(), phase: z.string(), reason: z.string().optional(), noProgress: z.number().int().min(0).optional(), reassessments: z.number().int().min(0).max(1).optional() }).strict()).max(64), phase: z.enum(["starting", "running", "paused", "stopped", "attention"]), reason: z.string(), runtimeStopVerified: z.boolean(), workerStopsVerified: z.boolean().optional() }).strict();
 export class TeamSupervisor {
     project;
     notify;
@@ -139,6 +139,8 @@ export class TeamSupervisor {
                     const saved = await this.loadCheckpoint();
                     if (saved.runId !== prior.runId || !saved.runtimeStopVerified || prior.phase === "running")
                         throw new Error("Recover and verify the previous run before a new start");
+                    if (model.taskKey && (saved.taskKey === model.taskKey || (!saved.taskKey && saved.parentSession === parentSession)))
+                        throw new Error("This user task already started a team; resume within its remaining limits instead of starting another to reset budgets");
                     const jobs = await listOwnedJobs(this.project, prior.runId);
                     if (jobs.some(job => job.live || !job.completionVerified))
                         throw new Error("Previous owned jobs require recovery before a new start");
@@ -153,16 +155,19 @@ export class TeamSupervisor {
                 throw new Error("Recover and verify previous runtime termination before resume");
             if (previous && (previous.scope !== params.scope || previous.execution !== params.execution || previous.provider !== model.provider || previous.model !== model.model || previous.autoContinue !== params.autoContinue))
                 throw new Error("Resume requires the original scope, model, execution and continuation mode");
+            if (previous && (previous.maxRounds !== params.maxRounds || previous.maxParentTurns !== params.maxParentTurns))
+                throw new Error("Resume cannot change the original worker or parent continuation budgets");
             if (previous) {
                 const original = await readTeam(this.project);
                 if (!original || original.runId !== previous.runId || original.goal !== params.goal || JSON.stringify(previous.limits) !== JSON.stringify(params.limits))
-                    throw new Error("Resume approval must match the original goal and capacity limits");
+                    throw new Error("Resume must match the original goal and capacity limits");
             }
+            const nativeTools = previous?.nativeTools ? (model.nativeTools ?? []).filter(name => previous.nativeTools.includes(name)) : model.nativeTools;
             const state = resume && previous ? await resumeTeam(this.project, previous.runId, params.windowSeconds) : await createTeam(this.project, { goal: params.goal, workerCount: Math.min(params.limits.initialWorkers, params.candidates.length), limits: params.limits, windowSeconds: params.windowSeconds });
             if (previous?.version === 1)
                 await atomicWrite(await domainPath(this.project, "team", `runtime.${previous.runId}.v1.backup.json`), JSON.stringify(previous) + "\n");
-            this.checkpoint = { version: 2, limits: params.limits, runId: state.runId, parentSession, scope: params.scope, provider: model.provider, model: model.model, execution: params.execution, maxRounds: params.maxRounds, autoContinue: params.autoContinue, maxParentTurns: params.maxParentTurns, parentTurns: previous?.parentTurns ?? 0, lastBatch: previous?.lastBatch ?? null, deliveredBatch: previous?.deliveredBatch ?? null, workers: state.workers.map(workerId => ({ workerId, rounds: previous?.workers.find(worker => worker.workerId === workerId)?.rounds ?? 0, noProgress: previous?.workers.find(worker => worker.workerId === workerId)?.noProgress ?? 0, phase: "starting", sessionPath: previous?.workers.find(worker => worker.workerId === workerId)?.sessionPath })), phase: "starting", reason: "Expert-approved run", runtimeStopVerified: false };
-            this.modelConfig = model;
+            this.checkpoint = { version: 2, limits: params.limits, runId: state.runId, parentSession, scope: params.scope, provider: model.provider, model: model.model, execution: params.execution, nativeTools, taskKey: model.taskKey ?? previous?.taskKey, maxRounds: params.maxRounds, autoContinue: params.autoContinue, maxParentTurns: params.maxParentTurns, parentTurns: previous?.parentTurns ?? 0, lastBatch: previous?.lastBatch ?? null, deliveredBatch: previous?.deliveredBatch ?? null, workers: state.workers.map(workerId => ({ workerId, rounds: previous?.workers.find(worker => worker.workerId === workerId)?.rounds ?? 0, noProgress: previous?.workers.find(worker => worker.workerId === workerId)?.noProgress ?? 0, phase: "starting", sessionPath: previous?.workers.find(worker => worker.workerId === workerId)?.sessionPath })), phase: "starting", reason: "Delegated within the current user task", runtimeStopVerified: false };
+            this.modelConfig = { ...model, nativeTools };
             this.executionSlots = new ExecutionSlots(params.limits.maxRunningWorkers);
             this.startSlots = new ExecutionSlots(params.limits.maxConcurrentStarts);
             this.deadline = setTimeout(() => { this.requestStop("Approved window expired"); }, Math.max(1, state.deadline - Date.now()));
@@ -215,8 +220,9 @@ export class TeamSupervisor {
         try {
             if (!this.checkpoint || !this.modelConfig || this.cancelled)
                 throw new Error("Team startup cancelled");
-            const config = workerConfigSchema.parse({ version: 1, cwd: this.project.cwd, ...this.modelConfig, workerId: worker.workerId, teamRunId: this.checkpoint.runId, execution: this.checkpoint.execution, domainTools: workerDomainSchemas(), ...(worker.sessionPath ? { resumePath: worker.sessionPath } : {}) });
-            instance = this.factory(config, workerDomainAdapter(this.project, this.checkpoint.execution));
+            const { taskKey: _taskKey, ...model } = this.modelConfig;
+            const config = workerConfigSchema.parse({ version: 1, cwd: this.project.cwd, ...model, workerId: worker.workerId, teamRunId: this.checkpoint.runId, execution: this.checkpoint.execution, domainTools: workerDomainSchemas(), ...(worker.sessionPath ? { resumePath: worker.sessionPath } : {}) });
+            instance = this.factory(config, workerDomainAdapter(this.project, config.execution && (!config.nativeTools || config.nativeTools.includes("bash"))));
             instance.onActivity?.(reply => {
                 if (reply.kind !== "activity" || reply.workerId !== worker.workerId || this.cancelled)
                     return;

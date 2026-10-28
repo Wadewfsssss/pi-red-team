@@ -1,5 +1,6 @@
 import { z } from "redteam-zod";
 const absolute = z.string().min(1).max(4096).startsWith("/");
+export const nativeToolSchema = z.enum(["read", "grep", "find", "ls", "bash", "edit", "write"]);
 export const workerConfigSchema = z.object({
     version: z.literal(1), workerId: z.string().uuid(), cwd: absolute, agentDir: absolute,
     provider: z.string().min(1).max(200), model: z.string().min(1).max(300),
@@ -7,6 +8,7 @@ export const workerConfigSchema = z.object({
     providerExtensions: z.array(absolute).max(4).default([]),
     teamRunId: z.string().uuid().optional(),
     execution: z.boolean().default(false),
+    nativeTools: z.array(nativeToolSchema).max(7).optional(),
     domainTools: z.array(z.object({ name: z.enum(["rt_search", "rt_graph", "rt_job", "rt_campaign"]), description: z.string().max(4000), parameters: z.record(z.string(), z.unknown()) }).strict()).max(4).default([]),
     resumePath: absolute.optional(), parentTimeoutMs: z.number().int().min(3000).max(60000).default(15000),
 }).strict();

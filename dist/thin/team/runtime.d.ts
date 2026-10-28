@@ -90,6 +90,9 @@ export interface TeamWorker {
     onActivity?(listener: (reply: WorkerReply) => void): () => void;
 }
 type WorkerFactory = (config: WorkerConfig, domain: ReturnType<typeof workerDomainAdapter>) => TeamWorker;
+type TeamModel = Pick<WorkerConfig, "provider" | "model" | "thinkingLevel" | "agentDir" | "nativeTools"> & {
+    taskKey?: string;
+};
 export declare class TeamSupervisor {
     readonly project: DomainProject;
     private readonly notify;
@@ -150,6 +153,8 @@ export declare class TeamSupervisor {
             phase: "running" | "paused" | "stopped" | "starting" | "attention";
             reason: string;
             runtimeStopVerified: boolean;
+            nativeTools?: ("bash" | "find" | "write" | "read" | "grep" | "ls" | "edit")[] | undefined;
+            taskKey?: string | undefined;
             limits?: {
                 maxWorkers: number;
                 maxWorkerAdmissions: number;
@@ -294,7 +299,7 @@ export declare class TeamSupervisor {
         provider: string;
         id: string;
     } | undefined): Promise<boolean>;
-    start(input: StartTeam, model: Pick<WorkerConfig, "provider" | "model" | "thinkingLevel" | "agentDir">, parentSession: string, resume?: boolean): Promise<void>;
+    start(input: StartTeam, model: TeamModel, parentSession: string, resume?: boolean): Promise<void>;
     private prepare;
     private launch;
     private scheduleScale;

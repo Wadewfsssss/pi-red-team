@@ -300,11 +300,11 @@ test("actual native Pi uses worker-result handoffs, never a coverage-completenes
     }] });
     await loader.reload();
     session = (await createAgentSession({ cwd: owned.cwd, agentDir, modelRuntime, model: modelRuntime.getModel("owned-settle", model.id), thinkingLevel: "off", settingsManager: settings, sessionManager: SessionManager.create(owned.cwd, join(owned.cwd, "sessions")), resourceLoader: loader, tools: ["rt_team"] })).session;
-    await session.bindExtensions({ mode: "tui", uiContext: { confirm: async () => { confirmations += 1; return true; }, setStatus: () => {}, notify: () => {} } as any, onError: error => errors.push(error) });
+    await session.bindExtensions({ mode: "tui", uiContext: { confirm: async () => { confirmations += 1; throw new Error("Routine delegation must not ask for approval"); }, setStatus: () => {}, notify: () => {} } as any, onError: error => errors.push(error) });
     await session.prompt("Review the two owned files within the approved scope; report limitations rather than declare a whole engagement complete.");
     for (let attempt = 0; attempt < 400 && !stoppedTeam; attempt++) await delay(20);
     await session.waitForIdle();
-    assert(sawBatch); assert(offered); assert(stoppedTeam); assert.equal(confirmations, 1); assert(calls < 12); assert.deepEqual(errors, []);
+    assert(sawBatch); assert(offered); assert(stoppedTeam); assert.equal(confirmations, 0); assert(calls < 12); assert.deepEqual(errors, []);
     assert.equal((await runtime!.status()).coverageNotes.goalCompletionEvaluated, false);
     assert.equal((await runtime!.status()).state!.tasks.filter(task => task.status === "completed").length, 2);
     const history = await readFile(session.sessionManager.getSessionFile()!, "utf8");

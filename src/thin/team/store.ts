@@ -253,7 +253,8 @@ export async function resumeTeam(project: DomainProject, runId: string, windowSe
   return mutateTeam(project, state => {
     if (state.runId !== uuid.parse(runId) || state.phase === "running") throw new Error("Team must be reconciled before resume");
     if (state.tasks.some(task => task.status === "uncertain")) throw new Error("Uncertain work requires expert reconciliation before resume");
-    state.epoch += 1; state.phase = "running"; state.deadline = Date.now() + windowSeconds * 1000;
+    if (state.deadline <= Date.now()) throw new Error("Original team window expired; resume cannot renew its budget");
+    state.epoch += 1; state.phase = "running"; state.deadline = Math.min(state.deadline, Date.now() + windowSeconds * 1000);
     return structuredClone(state);
   });
 }

@@ -1,4 +1,13 @@
 import { z } from "redteam-zod";
+export declare const nativeToolSchema: z.ZodEnum<{
+    bash: "bash";
+    find: "find";
+    write: "write";
+    read: "read";
+    grep: "grep";
+    ls: "ls";
+    edit: "edit";
+}>;
 export declare const workerConfigSchema: z.ZodObject<{
     version: z.ZodLiteral<1>;
     workerId: z.ZodString;
@@ -18,6 +27,15 @@ export declare const workerConfigSchema: z.ZodObject<{
     providerExtensions: z.ZodDefault<z.ZodArray<z.ZodString>>;
     teamRunId: z.ZodOptional<z.ZodString>;
     execution: z.ZodDefault<z.ZodBoolean>;
+    nativeTools: z.ZodOptional<z.ZodArray<z.ZodEnum<{
+        bash: "bash";
+        find: "find";
+        write: "write";
+        read: "read";
+        grep: "grep";
+        ls: "ls";
+        edit: "edit";
+    }>>>;
     domainTools: z.ZodDefault<z.ZodArray<z.ZodObject<{
         name: z.ZodEnum<{
             rt_campaign: "rt_campaign";
@@ -171,6 +189,15 @@ export declare const workerCommandSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
         providerExtensions: z.ZodDefault<z.ZodArray<z.ZodString>>;
         teamRunId: z.ZodOptional<z.ZodString>;
         execution: z.ZodDefault<z.ZodBoolean>;
+        nativeTools: z.ZodOptional<z.ZodArray<z.ZodEnum<{
+            bash: "bash";
+            find: "find";
+            write: "write";
+            read: "read";
+            grep: "grep";
+            ls: "ls";
+            edit: "edit";
+        }>>>;
         domainTools: z.ZodDefault<z.ZodArray<z.ZodObject<{
             name: z.ZodEnum<{
                 rt_campaign: "rt_campaign";

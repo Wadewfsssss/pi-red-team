@@ -21,7 +21,7 @@ export async function loadTeamPlan(project, parentSession, id) {
     z.string().uuid().parse(id);
     const saved = savedPlanSchema.parse(JSON.parse((await readBoundedFile(await domainPath(project, "team", "plans", `${id}.json`), 256 * 1024)).toString("utf8")));
     if (saved.id !== id || saved.parentSession !== parentSession)
-        throw new Error("Plan is not from this Pi session; plan again before approval");
+        throw new Error("Plan is not from this Pi session; plan again before starting");
     if (saved.plan.decision !== "parallel")
         throw new Error("Serial plan does not authorize team startup");
     return saved.plan;

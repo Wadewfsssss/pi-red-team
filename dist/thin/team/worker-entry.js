@@ -84,7 +84,8 @@ export function runWorker() {
         const project = { cwd: input.cwd };
         if (input.teamRunId)
             await invoke("initialize", { action: "read" });
-        const allowedTools = [...readTools, ...(input.execution ? ["bash", "edit", "write"] : []), ...(input.teamRunId ? ["rt_team", ...input.domainTools.map(tool => tool.name)] : [])];
+        const nativeTools = input.nativeTools ?? [...readTools, ...(input.execution ? ["bash", "edit", "write"] : [])];
+        const allowedTools = [...nativeTools.filter(name => input.execution || readTools.includes(name)), ...(input.teamRunId ? ["rt_team", ...input.domainTools.map(tool => tool.name)] : [])];
         const feedback = new ExecutionFeedback();
         writer = new EvidenceWriter(input.cwd);
         const sessionDir = safePath(project.cwd, ".redteam", "team", "workers", input.workerId, "sessions");

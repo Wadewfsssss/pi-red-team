@@ -96,7 +96,7 @@ export function workerDomainAdapter(project, execution) {
                 return { jobs, ownerScoped: true };
             if (parsed.action === "start") {
                 if (!execution || !parsed.command)
-                    throw new Error("Expert-approved execution and command required");
+                    throw new Error("Parent native bash capability and command required");
                 if (jobs.filter(job => job.live).length >= 2)
                     throw new Error("At most two active jobs per claim");
                 const state = await readTeam(project);

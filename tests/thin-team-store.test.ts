@@ -6,10 +6,11 @@ import { tmpdir } from "node:os";
 import { randomUUID } from "node:crypto";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
+import { setTimeout as delay } from "node:timers/promises";
 import { z } from "redteam-zod";
 import { digest } from "../src/files.js";
 import { mutateState, readState } from "../src/thin/state.js";
-import { claimWork, completeWork, createTeam, offerWork, pauseTeam, publishRecord, readRecords, readTeam, releaseWork, renewWork, unfoldRecord } from "../src/thin/team/store.js";
+import { claimWork, completeWork, createTeam, offerWork, pauseTeam, publishRecord, readRecords, readTeam, releaseWork, renewWork, resumeTeam, unfoldRecord } from "../src/thin/team/store.js";
 
 const execute = promisify(execFile);
 const preconditionHash = digest("owned target state v1");
@@ -29,6 +30,27 @@ test("team status does not create configuration or state before an explicit run"
   const owned = await fixture();
   try { assert.equal(await readTeam(owned), undefined); await assert.rejects(stat(join(owned.cwd, ".redteam")), { code: "ENOENT" }); }
   finally { await owned.cleanup(); }
+});
+
+test("resume retains the original deadline instead of granting another window", async () => {
+  const owned = await fixture();
+  try {
+    const team = await createTeam(owned, { goal: "Owned deadline fixture", windowSeconds: 10 });
+    await pauseTeam(owned, team.runId);
+    const resumed = await resumeTeam(owned, team.runId, 86400);
+    assert.equal(resumed.deadline, team.deadline);
+    assert(resumed.epoch > team.epoch);
+  } finally { await owned.cleanup(); }
+});
+
+test("an expired team cannot resume by requesting a fresh window", async () => {
+  const owned = await fixture();
+  try {
+    const team = await createTeam(owned, { goal: "Owned expiry fixture", windowSeconds: 1 });
+    await pauseTeam(owned, team.runId); await delay(1050);
+    await assert.rejects(resumeTeam(owned, team.runId, 86400), /expired.*cannot renew/);
+    assert.equal((await readTeam(owned))!.phase, "paused");
+  } finally { await owned.cleanup(); }
 });
 
 test("async domain mutations commit only after final mutation and roll back on failure", async () => {
